@@ -58,8 +58,8 @@ struct mrb_cares_ctx {
   struct RClass *addrinfo_class;
   struct RClass *cares_addrinfo_class;
   struct RClass *cares_socket_class;
-  mrb_value state_callback;
-  ares_channel channel;
+  mrb_value block;
+  ares_channel_t *channel;
 };
 
 struct mrb_cares_addrinfo {
@@ -83,14 +83,6 @@ mrb_cares_ctx_free(mrb_state *mrb, void *p)
   mrb_free(mrb, p);
 }
 
-static void
-mrb_cares_options_free(mrb_state *mrb, void *p)
-{
-  struct mrb_cares_options *mrb_cares_options = (struct mrb_cares_options *) p;
-  ares_destroy_options(&mrb_cares_options->options);
-  mrb_free(mrb, p);
-}
-
 static const struct mrb_data_type mrb_cares_ctx_type = {
   "$i_mrb_mrb_cares_ctx_t", mrb_cares_ctx_free
 };
@@ -100,19 +92,19 @@ static const struct mrb_data_type mrb_cares_addrinfo_type = {
 };
 
 static const struct mrb_data_type mrb_cares_options_type = {
-  "$i_mrb_cares_options_t", mrb_cares_options_free
+  "$i_mrb_cares_options_t", mrb_free
 };
 
 static void
 mrb_cares_usage_error(mrb_state *mrb, const char *funcname, int rc)
 {
-  mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "Errno2Class"));
+  mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "_Errno2Class"));
   mrb_raisef(mrb, mrb_class_ptr(mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, rc))), "%s: %s", funcname, ares_strerror(rc));
 }
 
 static mrb_value
 mrb_cares_response_error(mrb_state *mrb, int status)
 {
-  mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "Errno2Class"));
+  mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "_Errno2Class"));
   return mrb_exc_new_str(mrb, mrb_class_ptr(mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, status))), mrb_str_new_cstr(mrb, ares_strerror(status)));
 }

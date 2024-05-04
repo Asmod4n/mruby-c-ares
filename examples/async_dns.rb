@@ -5,19 +5,19 @@ ares = Ares.new do |socket|
   poll.remove_update_or_add(socket, (socket.readable? ? Poll::In : 0)|(socket.writable? ? Poll::Out : 0))
 end
 
-ruby_lang = ares.getaddrinfo(server, "www.ruby-lang.org", "https") do |cname, ai, error|
+ares.getaddrinfo(server, "www.ruby-lang.org", "https") do |cname, ai, error|
   puts cname.inspect
   puts ai.inspect
   puts error.inspect
 end
 
-github = ares.getaddrinfo(server, "redirect.github.com", "https") do |cname, ai, error|
+ares.getaddrinfo(server, "redirect.github.com", "https") do |cname, ai, error|
   puts cname.inspect
   puts ai.inspect
   puts error.inspect
 end
 
-notfound = ares.getaddrinfo(server, "www.qwgeqgh.org", "https") do |cname, ai, error|
+ares.getaddrinfo(server, "www.qwgeqgh.org", "qegqe") do |cname, ai, error|
   puts cname.inspect
   puts ai.inspect
   puts error.inspect

@@ -65,24 +65,24 @@ mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int w
   int arena_index = mrb_gc_arena_save(mrb);
 
   mrb_value argv[] = {mrb_int_value(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
-  mrb_yield(mrb, mrb_cares_ctx->state_callback, mrb_obj_new(mrb, mrb_cares_ctx->cares_socket_class, NELEMS(argv), argv));
+  mrb_yield(mrb, mrb_cares_ctx->block, mrb_obj_new(mrb, mrb_cares_ctx->cares_socket_class, NELEMS(argv), argv));
   mrb_gc_arena_restore(mrb, arena_index);
 }
 
 static mrb_value
 mrb_ares_init_options(mrb_state *mrb, mrb_value self)
 {
-  struct mrb_cares_options *options = NULL;
-  mrb_value state_callback = mrb_nil_value();
-  mrb_get_args(mrb, "d&", &options, &mrb_cares_options_type, &state_callback);
-  if (unlikely(mrb_nil_p(state_callback))) {
+  mrb_value options_val, block = mrb_nil_value();
+  mrb_get_args(mrb, "o&", &options_val, &block);
+  struct mrb_cares_options *mrb_cares_options = mrb_data_get_ptr(mrb, options_val, &mrb_cares_options_type);
+  if (unlikely(mrb_nil_p(block))) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "no block given");
   }
-  if (unlikely(MRB_TT_PROC != mrb_type(state_callback))) {
+  if (unlikely(MRB_TT_PROC != mrb_type(block))) {
     mrb_raise(mrb, E_TYPE_ERROR, "not a block");
   }
-
-  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "state_callback"), state_callback);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "options"), options_val);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "block"),   block);
 
   struct mrb_cares_ctx *mrb_cares_ctx = mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_ctx));
   mrb_data_init(self, mrb_cares_ctx, &mrb_cares_ctx_type);
@@ -90,12 +90,12 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   mrb_cares_ctx->addrinfo_class = mrb_class_get(mrb, "Addrinfo");
   mrb_cares_ctx->cares_addrinfo_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "_Addrinfo");
   mrb_cares_ctx->cares_socket_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "Socket");
-  mrb_cares_ctx->state_callback = state_callback;
+  mrb_cares_ctx->block = block;
   mrb_cares_ctx->channel = NULL;
-  options->options.sock_state_cb = mrb_ares_state_callback;
-  options->options.sock_state_cb_data = mrb_cares_ctx;
-  options->optmask |= ARES_OPT_SOCK_STATE_CB;
-  int rc = ares_init_options(&mrb_cares_ctx->channel, &options->options, options->optmask);
+  mrb_cares_options->options.sock_state_cb = mrb_ares_state_callback;
+  mrb_cares_options->options.sock_state_cb_data = mrb_cares_ctx;
+  mrb_cares_options->optmask |= ARES_OPT_SOCK_STATE_CB;
+  int rc = ares_init_options(&mrb_cares_ctx->channel, &mrb_cares_options->options, mrb_cares_options->optmask);
   if (unlikely(rc != ARES_SUCCESS))
     mrb_cares_usage_error(mrb, "ares_init_options", rc);
 
@@ -130,13 +130,13 @@ mrb_ares_getaddrinfo(mrb_state *mrb, mrb_value self)
   struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
   mrb_value sock, name, service, block = mrb_nil_value();
   mrb_get_args(mrb, "oSS&", &sock, &name, &service, &block);
+  ares_socket_t socket = (ares_socket_t) mrb_integer(mrb_convert_type(mrb, sock, MRB_TT_INTEGER, "Integer", "fileno"));
   if (unlikely(mrb_nil_p(block))) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "no block given");
   }
   if (unlikely(MRB_TT_PROC != mrb_type(block))) {
     mrb_raise(mrb, E_TYPE_ERROR, "not a block");
   }
-  ares_socket_t socket = (ares_socket_t) mrb_integer(mrb_convert_type(mrb, sock, MRB_TT_INTEGER, "Integer", "fileno"));
   struct sockaddr_storage ss;
   socklen_t optlen = sizeof(ss);
   if (unlikely(getsockname(socket, (struct sockaddr *) &ss, &optlen) == -1)) {
@@ -179,16 +179,15 @@ mrb_ares_getaddrinfo(mrb_state *mrb, mrb_value self)
 
   mrb_iv_set(mrb, self, mrb_cares_addrinfo->obj_id, addrinfo); 
 
-  return addrinfo;
+  return self;
 }
 
 static mrb_value
 mrb_ares_timeout(mrb_state *mrb, mrb_value self)
 {
-  mrb_float tmt = 0.0;
-  mrb_get_args(mrb, "|f", &tmt);
-
   struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  mrb_float tmt = 0.0;
+  mrb_get_args(mrb, "|f", &tmt); 
   struct timeval tv = {0};
   if (tmt > 0.0) {
     tmt += 0.5e-9; // we are adding this so maxtv can't become negative.
@@ -223,21 +222,27 @@ mrb_ares_process_fd(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_new(mrb_state *mrb, mrb_value self)
 {
-  ares_channel_t *channelptr;
-  int rc = ares_init(&channelptr);
-  if (unlikely(rc != ARES_SUCCESS)) {
-    mrb_cares_usage_error(mrb, "ares_init", rc);
-  }
   struct mrb_cares_options *mrb_cares_options = mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_options));
-  rc = ares_save_options(channelptr, &mrb_cares_options->options, &mrb_cares_options->optmask);
-  ares_destroy(channelptr);
-  if (likely(rc == ARES_SUCCESS)) {
-    mrb_data_init(self, mrb_cares_options, &mrb_cares_options_type);
-  } else {
-    mrb_free(mrb, mrb_cares_options);
-    mrb_data_init(self, NULL, NULL);
-    mrb_cares_usage_error(mrb, "ares_save_options", rc);
-  }
+  memset(mrb_cares_options, '\0', sizeof(*mrb_cares_options));
+  mrb_data_init(self, mrb_cares_options, &mrb_cares_options_type);
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_flags_get(mrb_state *mrb, mrb_value self)
+{
+  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.flags);
+}
+
+static mrb_value
+mrb_ares_options_flags_set(mrb_state *mrb, mrb_value self)
+{
+  mrb_int flags;
+  mrb_get_args(mrb, "i", &flags);
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+  mrb_cares_options->options.flags = (int) flags;
+  mrb_cares_options->optmask |= ARES_OPT_FLAGS;
 
   return self;
 }
@@ -375,6 +380,8 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   mrb_ares_options_class = mrb_define_class_under(mrb, mrb_ares_class, "Options", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_options_class, MRB_TT_CDATA);
   mrb_define_method(mrb, mrb_ares_options_class, "initialize",  mrb_ares_options_new,             MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "flags",       mrb_ares_options_flags_get,       MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "flags=",      mrb_ares_options_flags_set,       MRB_ARGS_REQ(1));
   mrb_define_method(mrb, mrb_ares_options_class, "timeout",     mrb_ares_options_timeout_get,     MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "timeout=",    mrb_ares_options_timeout_set,     MRB_ARGS_REQ(1));
   mrb_define_method(mrb, mrb_ares_options_class, "tries",       mrb_ares_options_tries_get,       MRB_ARGS_NONE());
@@ -398,7 +405,7 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
 #include "cares_const.cstub"
 
   mrb_value errno_to_class = mrb_hash_new(mrb);
-  mrb_define_const(mrb, mrb_ares_class, "Errno2Class", errno_to_class);
+  mrb_define_const(mrb, mrb_ares_class, "_Errno2Class", errno_to_class);
 #define mrb_cares_define_error(ARES_ENUM_NAME, ARES_ENUM) \
   do { \
     struct RClass *enum_err_class = mrb_define_class_under(mrb, mrb_ares_class, ARES_ENUM_NAME, mrb_ares_error_class); \
