@@ -1,0 +1,198 @@
+#ifdef ARES_FLAG_USEVC
+mrb_cares_define_const("FLAG_USEVC", ARES_FLAG_USEVC);
+#endif
+#ifdef ARES_FLAG_PRIMARY
+mrb_cares_define_const("FLAG_PRIMARY", ARES_FLAG_PRIMARY);
+#endif
+#ifdef ARES_FLAG_IGNTC
+mrb_cares_define_const("FLAG_IGNTC", ARES_FLAG_IGNTC);
+#endif
+#ifdef ARES_FLAG_NORECURSE
+mrb_cares_define_const("FLAG_NORECURSE", ARES_FLAG_NORECURSE);
+#endif
+#ifdef ARES_FLAG_STAYOPEN
+mrb_cares_define_const("FLAG_STAYOPEN", ARES_FLAG_STAYOPEN);
+#endif
+#ifdef ARES_FLAG_NOSEARCH
+mrb_cares_define_const("FLAG_NOSEARCH", ARES_FLAG_NOSEARCH);
+#endif
+#ifdef ARES_FLAG_NOALIASES
+mrb_cares_define_const("FLAG_NOALIASES", ARES_FLAG_NOALIASES);
+#endif
+#ifdef ARES_FLAG_NOCHECKRESP
+mrb_cares_define_const("FLAG_NOCHECKRESP", ARES_FLAG_NOCHECKRESP);
+#endif
+#ifdef ARES_FLAG_EDNS
+mrb_cares_define_const("FLAG_EDNS", ARES_FLAG_EDNS);
+#endif
+#ifdef ARES_FLAG_NO_DFLT_SVR
+mrb_cares_define_const("FLAG_NO_DFLT_SVR", ARES_FLAG_NO_DFLT_SVR);
+#endif
+#ifdef ARES_OPT_FLAGS
+mrb_cares_define_const("OPT_FLAGS", ARES_OPT_FLAGS);
+#endif
+#ifdef ARES_OPT_TIMEOUT
+mrb_cares_define_const("OPT_TIMEOUT", ARES_OPT_TIMEOUT);
+#endif
+#ifdef ARES_OPT_TRIES
+mrb_cares_define_const("OPT_TRIES", ARES_OPT_TRIES);
+#endif
+#ifdef ARES_OPT_NDOTS
+mrb_cares_define_const("OPT_NDOTS", ARES_OPT_NDOTS);
+#endif
+#ifdef ARES_OPT_UDP_PORT
+mrb_cares_define_const("OPT_UDP_PORT", ARES_OPT_UDP_PORT);
+#endif
+#ifdef ARES_OPT_TCP_PORT
+mrb_cares_define_const("OPT_TCP_PORT", ARES_OPT_TCP_PORT);
+#endif
+#ifdef ARES_OPT_SERVERS
+mrb_cares_define_const("OPT_SERVERS", ARES_OPT_SERVERS);
+#endif
+#ifdef ARES_OPT_DOMAINS
+mrb_cares_define_const("OPT_DOMAINS", ARES_OPT_DOMAINS);
+#endif
+#ifdef ARES_OPT_LOOKUPS
+mrb_cares_define_const("OPT_LOOKUPS", ARES_OPT_LOOKUPS);
+#endif
+#ifdef ARES_OPT_SOCK_STATE_CB
+mrb_cares_define_const("OPT_SOCK_STATE_CB", ARES_OPT_SOCK_STATE_CB);
+#endif
+#ifdef ARES_OPT_SORTLIST
+mrb_cares_define_const("OPT_SORTLIST", ARES_OPT_SORTLIST);
+#endif
+#ifdef ARES_OPT_SOCK_SNDBUF
+mrb_cares_define_const("OPT_SOCK_SNDBUF", ARES_OPT_SOCK_SNDBUF);
+#endif
+#ifdef ARES_OPT_SOCK_RCVBUF
+mrb_cares_define_const("OPT_SOCK_RCVBUF", ARES_OPT_SOCK_RCVBUF);
+#endif
+#ifdef ARES_OPT_TIMEOUTMS
+mrb_cares_define_const("OPT_TIMEOUTMS", ARES_OPT_TIMEOUTMS);
+#endif
+#ifdef ARES_OPT_ROTATE
+mrb_cares_define_const("OPT_ROTATE", ARES_OPT_ROTATE);
+#endif
+#ifdef ARES_OPT_EDNSPSZ
+mrb_cares_define_const("OPT_EDNSPSZ", ARES_OPT_EDNSPSZ);
+#endif
+#ifdef ARES_OPT_NOROTATE
+mrb_cares_define_const("OPT_NOROTATE", ARES_OPT_NOROTATE);
+#endif
+#ifdef ARES_OPT_RESOLVCONF
+mrb_cares_define_const("OPT_RESOLVCONF", ARES_OPT_RESOLVCONF);
+#endif
+#ifdef ARES_OPT_HOSTS_FILE
+mrb_cares_define_const("OPT_HOSTS_FILE", ARES_OPT_HOSTS_FILE);
+#endif
+#ifdef ARES_OPT_UDP_MAX_QUERIES
+mrb_cares_define_const("OPT_UDP_MAX_QUERIES", ARES_OPT_UDP_MAX_QUERIES);
+#endif
+#ifdef ARES_OPT_MAXTIMEOUTMS
+mrb_cares_define_const("OPT_MAXTIMEOUTMS", ARES_OPT_MAXTIMEOUTMS);
+#endif
+#ifdef ARES_OPT_QUERY_CACHE
+mrb_cares_define_const("OPT_QUERY_CACHE", ARES_OPT_QUERY_CACHE);
+#endif
+#ifdef ARES_OPT_EVENT_THREAD
+mrb_cares_define_const("OPT_EVENT_THREAD", ARES_OPT_EVENT_THREAD);
+#endif
+#ifdef ARES_NI_NOFQDN
+mrb_cares_define_const("NI_NOFQDN", ARES_NI_NOFQDN);
+#endif
+#ifdef ARES_NI_NUMERICHOST
+mrb_cares_define_const("NI_NUMERICHOST", ARES_NI_NUMERICHOST);
+#endif
+#ifdef ARES_NI_NAMEREQD
+mrb_cares_define_const("NI_NAMEREQD", ARES_NI_NAMEREQD);
+#endif
+#ifdef ARES_NI_NUMERICSERV
+mrb_cares_define_const("NI_NUMERICSERV", ARES_NI_NUMERICSERV);
+#endif
+#ifdef ARES_NI_DGRAM
+mrb_cares_define_const("NI_DGRAM", ARES_NI_DGRAM);
+#endif
+#ifdef ARES_NI_TCP
+mrb_cares_define_const("NI_TCP", ARES_NI_TCP);
+#endif
+#ifdef ARES_NI_UDP
+mrb_cares_define_const("NI_UDP", ARES_NI_UDP);
+#endif
+#ifdef ARES_NI_SCTP
+mrb_cares_define_const("NI_SCTP", ARES_NI_SCTP);
+#endif
+#ifdef ARES_NI_DCCP
+mrb_cares_define_const("NI_DCCP", ARES_NI_DCCP);
+#endif
+#ifdef ARES_NI_NUMERICSCOPE
+mrb_cares_define_const("NI_NUMERICSCOPE", ARES_NI_NUMERICSCOPE);
+#endif
+#ifdef ARES_NI_LOOKUPHOST
+mrb_cares_define_const("NI_LOOKUPHOST", ARES_NI_LOOKUPHOST);
+#endif
+#ifdef ARES_NI_LOOKUPSERVICE
+mrb_cares_define_const("NI_LOOKUPSERVICE", ARES_NI_LOOKUPSERVICE);
+#endif
+#ifdef ARES_NI_IDN
+mrb_cares_define_const("NI_IDN", ARES_NI_IDN);
+#endif
+#ifdef ARES_NI_IDN_ALLOW_UNASSIGNED
+mrb_cares_define_const("NI_IDN_ALLOW_UNASSIGNED", ARES_NI_IDN_ALLOW_UNASSIGNED);
+#endif
+#ifdef ARES_NI_IDN_USE_STD3_ASCII_RULES
+mrb_cares_define_const("NI_IDN_USE_STD3_ASCII_RULES", ARES_NI_IDN_USE_STD3_ASCII_RULES);
+#endif
+#ifdef ARES_AI_CANONNAME
+mrb_cares_define_const("AI_CANONNAME", ARES_AI_CANONNAME);
+#endif
+#ifdef ARES_AI_NUMERICHOST
+mrb_cares_define_const("AI_NUMERICHOST", ARES_AI_NUMERICHOST);
+#endif
+#ifdef ARES_AI_PASSIVE
+mrb_cares_define_const("AI_PASSIVE", ARES_AI_PASSIVE);
+#endif
+#ifdef ARES_AI_NUMERICSERV
+mrb_cares_define_const("AI_NUMERICSERV", ARES_AI_NUMERICSERV);
+#endif
+#ifdef ARES_AI_V4MAPPED
+mrb_cares_define_const("AI_V4MAPPED", ARES_AI_V4MAPPED);
+#endif
+#ifdef ARES_AI_ALL
+mrb_cares_define_const("AI_ALL", ARES_AI_ALL);
+#endif
+#ifdef ARES_AI_ADDRCONFIG
+mrb_cares_define_const("AI_ADDRCONFIG", ARES_AI_ADDRCONFIG);
+#endif
+#ifdef ARES_AI_NOSORT
+mrb_cares_define_const("AI_NOSORT", ARES_AI_NOSORT);
+#endif
+#ifdef ARES_AI_ENVHOSTS
+mrb_cares_define_const("AI_ENVHOSTS", ARES_AI_ENVHOSTS);
+#endif
+#ifdef ARES_AI_IDN
+mrb_cares_define_const("AI_IDN", ARES_AI_IDN);
+#endif
+#ifdef ARES_AI_IDN_ALLOW_UNASSIGNED
+mrb_cares_define_const("AI_IDN_ALLOW_UNASSIGNED", ARES_AI_IDN_ALLOW_UNASSIGNED);
+#endif
+#ifdef ARES_AI_IDN_USE_STD3_ASCII_RULES
+mrb_cares_define_const("AI_IDN_USE_STD3_ASCII_RULES", ARES_AI_IDN_USE_STD3_ASCII_RULES);
+#endif
+#ifdef ARES_AI_CANONIDN
+mrb_cares_define_const("AI_CANONIDN", ARES_AI_CANONIDN);
+#endif
+#ifdef ARES_AI_MASK
+mrb_cares_define_const("AI_MASK", ARES_AI_MASK);
+#endif
+#ifdef ARES_GETSOCK_MAXNUM
+mrb_cares_define_const("GETSOCK_MAXNUM", ARES_GETSOCK_MAXNUM);
+#endif
+#ifdef ARES_LIB_INIT_NONE
+mrb_cares_define_const("LIB_INIT_NONE", ARES_LIB_INIT_NONE);
+#endif
+#ifdef ARES_LIB_INIT_WIN32
+mrb_cares_define_const("LIB_INIT_WIN32", ARES_LIB_INIT_WIN32);
+#endif
+#ifdef ARES_LIB_INIT_ALL
+mrb_cares_define_const("LIB_INIT_ALL", ARES_LIB_INIT_ALL);
+#endif
