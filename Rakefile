@@ -14,4 +14,9 @@ task :clean do
   sh "cd mruby && rake deep_clean"
 end
 
+desc "constgen"
+task :constgen do
+  sh "ruby src/const_gen.rb"
+end
+
 task :default => :test

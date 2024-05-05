@@ -117,8 +117,8 @@ struct mrb_cares_addrinfo **mrb_cares_addrinfo)
   (*mrb_cares_addrinfo)->family = ss->ss_family;
   (*mrb_cares_addrinfo)->block = block;
   mrb_value addrinfo = mrb_obj_value(addrinfo_data);
-  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "cares"),   self);
-  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "block"),   block);
+  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "cares"), self);
+  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "block"), block);
   (*mrb_cares_addrinfo)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(addrinfo)), 36));
 
   return addrinfo;
