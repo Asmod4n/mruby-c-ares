@@ -91,5 +91,3 @@ If you have run the example from above you might have seen the replies aren't in
 Thats because ares handles everything asynchronously, in normal ruby applications this isnt the case, socket operations are usally executed in the order they were given.
 
 Handling operations asynchronously has the possible benefit of making everything a bit faster, I'm currently writing a mRuby gem to expose fast handling of socket operations, stay stuned for more :)
-
-The newly added threaded implementation of c-ares where you dont have to do IO on your own won't be implemendet, it has no benefits compared to calling getaddrinfo and its friends.
