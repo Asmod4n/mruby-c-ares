@@ -44,7 +44,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
     mrb_value argv[3] = {mrb_nil_value()};
     if (likely(status == ARES_SUCCESS)) {
       struct ares_addrinfo_cname *cname = result->cnames;
-      struct ares_addrinfo_node *node = result->nodes;
+      struct ares_addrinfo_node   *node = result->nodes;
       if (cname) {
         argv[0] = mrb_ary_new_capa(mrb, 1);
         do {
@@ -333,9 +333,7 @@ mrb_ares_options_flags_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
 #endif
-
 #ifdef ARES_OPT_TIMEOUTMS
 static mrb_value
 mrb_ares_options_timeout_get(mrb_state *mrb, mrb_value self)
