@@ -52,7 +52,7 @@
 #endif
 
 #define NELEMS(argv) (sizeof(argv) / sizeof(argv[0]))
-struct mrb_cares_addrinfo;
+
 struct mrb_cares_ctx {
   mrb_state *mrb;
   struct RClass *addrinfo_class;
@@ -61,6 +61,7 @@ struct mrb_cares_ctx {
   mrb_value cares;
   mrb_value block;
   ares_channel_t *channel;
+  mrb_bool destruction;
 };
 
 struct mrb_cares_addrinfo {
@@ -79,6 +80,7 @@ static void
 mrb_cares_ctx_free(mrb_state *mrb, void *p)
 {
   struct mrb_cares_ctx *mrb_cares_ctx = (struct mrb_cares_ctx *) p;
+  mrb_cares_ctx->destruction = TRUE;
   ares_destroy(mrb_cares_ctx->channel);
   mrb_free(mrb, p);
 }

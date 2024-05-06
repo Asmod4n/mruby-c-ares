@@ -31,9 +31,8 @@ static void
 mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
   struct mrb_cares_addrinfo *mrb_cares_addrinfo = (struct mrb_cares_addrinfo *) arg;
-  if (status == ARES_EDESTRUCTION) {
+  if (status == ARES_EDESTRUCTION)
     return;
-  }
   if (status == ARES_ECANCELLED)
     return;
 
@@ -81,6 +80,8 @@ static void
 mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int writable)
 {
   struct mrb_cares_ctx *mrb_cares_ctx = (struct mrb_cares_ctx *) data;
+  if (mrb_cares_ctx->destruction)
+    return;
   mrb_state *mrb = mrb_cares_ctx->mrb;
   int arena_index = mrb_gc_arena_save(mrb);
 
@@ -116,7 +117,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_TYPE_ERROR, "not a block");
   }
   mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "options"), options_val);
-  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "block"), block);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "block"),   block);
 
   struct mrb_cares_ctx *mrb_cares_ctx = mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_ctx));
   mrb_data_init(self, mrb_cares_ctx, &mrb_cares_ctx_type);
@@ -127,6 +128,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   mrb_cares_ctx->cares = self;
   mrb_cares_ctx->block = block;
   mrb_cares_ctx->channel = NULL;
+  mrb_cares_ctx->destruction = FALSE;
 
   mrb_cares_options->options.sock_state_cb = mrb_ares_state_callback;
   mrb_cares_options->options.sock_state_cb_data = mrb_cares_ctx;
