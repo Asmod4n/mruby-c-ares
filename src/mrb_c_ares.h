@@ -114,12 +114,22 @@ static void
 mrb_cares_usage_error(mrb_state *mrb, const char *funcname, int rc)
 {
   mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "_Errno2Class"));
-  mrb_raisef(mrb, mrb_class_ptr(mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, rc))), "%s: %s", funcname, ares_strerror(rc));
+  mrb_value errno_class = mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, rc));
+  if (mrb_nil_p(errno_class)) {
+    mrb_raisef(mrb, mrb_class_get_under(mrb, mrb_class_get(mrb, "Ares"), "Error"), "%s: %s", funcname, ares_strerror(rc));
+  } else {
+    mrb_raisef(mrb, mrb_class_ptr(errno_class), "%s: %s", funcname, ares_strerror(rc));
+  }
 }
 
 static mrb_value
 mrb_cares_response_error(mrb_state *mrb, int status)
 {
   mrb_value errno_to_class = mrb_const_get(mrb, mrb_obj_value(mrb_class_get(mrb, "Ares")), mrb_intern_lit(mrb, "_Errno2Class"));
-  return mrb_exc_new_str(mrb, mrb_class_ptr(mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, status))), mrb_str_new_cstr(mrb, ares_strerror(status)));
+  mrb_value errno_class = mrb_hash_get(mrb, errno_to_class, mrb_int_value(mrb, status));
+  if (mrb_nil_p(errno_class)) {
+    return mrb_exc_new_str(mrb, mrb_class_get_under(mrb, mrb_class_get(mrb, "Ares"), "Error"), mrb_str_new_cstr(mrb, ares_strerror(status)));
+  } else {
+    return mrb_exc_new_str(mrb, mrb_class_ptr(errno_class), mrb_str_new_cstr(mrb, ares_strerror(status)));
+  } 
 }

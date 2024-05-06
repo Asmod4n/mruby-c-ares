@@ -70,7 +70,7 @@ The current supported options can be seen in ```mrblib/ares.rb```.
 For what those options do take a look at https://c-ares.org/ares_init_options.html
 Which options can be used depends on your installed c-ares library Version, calling ```Ares::Options::AVAILABLE_OPTIONS``` shows you all available ones.
 
-There are three more functions for a Ares context, servers_ports_csv=, local_ip4= and local_ip6=
+There are three more functions for a Ares context, ```ares.servers_ports_csv=```, ```ares.local_ip4=``` and ```ares.local_ip6=```
 ares.servers_ports_csv= excepts a string with the following formatting ip[:port][%iface], separated by commas.
 Take a look at https://c-ares.org/ares_set_servers_ports_csv.html for more information.
 
