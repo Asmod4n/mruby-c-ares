@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -33,9 +34,8 @@
 #include <mruby/string.h>
 #include <mruby/array.h>
 #include <mruby/hash.h>
-#include <mruby/value.h>
-#include <mruby/ext/io.h>
 #include <mruby/numeric.h>
+#include <mruby/throw.h>
 
 #include <ares.h>
 
@@ -52,18 +52,18 @@
 #endif
 
 #define NELEMS(argv) (sizeof(argv) / sizeof(argv[0]))
-
+struct mrb_cares_addrinfo;
 struct mrb_cares_ctx {
   mrb_state *mrb;
   struct RClass *addrinfo_class;
   struct RClass *cares_addrinfo_class;
   struct RClass *cares_socket_class;
+  mrb_value cares;
   mrb_value block;
   ares_channel_t *channel;
 };
 
 struct mrb_cares_addrinfo {
-  mrb_value cares;
   struct mrb_cares_ctx *mrb_cares_ctx;
   mrb_value block;
   sa_family_t family;
@@ -83,6 +83,14 @@ mrb_cares_ctx_free(mrb_state *mrb, void *p)
   mrb_free(mrb, p);
 }
 
+static void
+mrb_cares_options_free(mrb_state *mrb, void *p)
+{
+  struct mrb_cares_options *mrb_cares_options = (struct mrb_cares_options *) p;
+  mrb_free(mrb, mrb_cares_options->options.domains);
+  mrb_free(mrb, p);
+}
+
 static const struct mrb_data_type mrb_cares_ctx_type = {
   "$i_mrb_mrb_cares_ctx_t", mrb_cares_ctx_free
 };
@@ -92,7 +100,7 @@ static const struct mrb_data_type mrb_cares_addrinfo_type = {
 };
 
 static const struct mrb_data_type mrb_cares_options_type = {
-  "$i_mrb_cares_options_t", mrb_free
+  "$i_mrb_cares_options_t", mrb_cares_options_free
 };
 
 static void

@@ -23,37 +23,57 @@ mrb_cares_get_ai(struct mrb_cares_addrinfo *mrb_cares_addrinfo, struct ares_addr
     mrb_fixnum_value(node->ai_socktype),
     mrb_fixnum_value(node->ai_protocol)
   };
+
   return mrb_obj_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, mrb_cares_addrinfo->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
 }
 
 static void 
 mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
-  if (likely(status != ARES_EDESTRUCTION)) {
-    struct mrb_cares_addrinfo *mrb_cares_addrinfo = (struct mrb_cares_addrinfo *) arg;
+  struct mrb_cares_addrinfo *mrb_cares_addrinfo = (struct mrb_cares_addrinfo *) arg;
+  if (status == ARES_EDESTRUCTION) {
+    return;
+  }
+  if (status == ARES_ECANCELLED)
+    return;
+
+  mrb_state *mrb = mrb_cares_addrinfo->mrb_cares_ctx->mrb;
+  struct mrb_jmpbuf* prev_jmp = mrb->jmp;
+  struct mrb_jmpbuf c_jmp;
+
+  MRB_TRY(&c_jmp)
+  {
+    mrb->jmp = &c_jmp;
     mrb_value argv[3] = {mrb_nil_value()};
     if (likely(status == ARES_SUCCESS)) {
       struct ares_addrinfo_cname *cname = result->cnames;
       struct ares_addrinfo_node *node = result->nodes;
       if (cname) {
-        argv[0] = mrb_ary_new_capa(mrb_cares_addrinfo->mrb_cares_ctx->mrb, 1);
+        argv[0] = mrb_ary_new_capa(mrb, 1);
         do {
-          mrb_ary_push(mrb_cares_addrinfo->mrb_cares_ctx->mrb, argv[0], mrb_str_new_cstr(mrb_cares_addrinfo->mrb_cares_ctx->mrb, cname->name));
+          mrb_ary_push(mrb, argv[0], mrb_str_new_cstr(mrb, cname->name));
         } while ((cname = cname->next));
       }
       if (node) {
-        argv[1] = mrb_ary_new_capa(mrb_cares_addrinfo->mrb_cares_ctx->mrb, 1);
+        argv[1] = mrb_ary_new_capa(mrb, 1);
         do {
-          mrb_ary_push(mrb_cares_addrinfo->mrb_cares_ctx->mrb, argv[1], mrb_cares_get_ai(mrb_cares_addrinfo, node));
+          mrb_ary_push(mrb, argv[1], mrb_cares_get_ai(mrb_cares_addrinfo, node));
         } while ((node = node->ai_next));
       }
     } else {
-      argv[2] = mrb_cares_response_error(mrb_cares_addrinfo->mrb_cares_ctx->mrb, status);
+      argv[2] = mrb_cares_response_error(mrb, status);
     }
-    mrb_yield_argv(mrb_cares_addrinfo->mrb_cares_ctx->mrb, mrb_cares_addrinfo->block, NELEMS(argv), argv);
-    mrb_iv_remove(mrb_cares_addrinfo->mrb_cares_ctx->mrb, mrb_cares_addrinfo->cares, mrb_cares_addrinfo->obj_id);
-  }
+    mrb_yield_argv(mrb, mrb_cares_addrinfo->block, NELEMS(argv), argv);
 
+    mrb->jmp = prev_jmp;
+  }
+  MRB_CATCH(&c_jmp)
+  {
+    mrb->jmp = prev_jmp;
+  }
+  MRB_END_EXC(&c_jmp);
+
+  mrb_iv_remove(mrb, mrb_cares_addrinfo->mrb_cares_ctx->cares, mrb_cares_addrinfo->obj_id);
   ares_freeaddrinfo(result);
 }
 
@@ -64,8 +84,22 @@ mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int w
   mrb_state *mrb = mrb_cares_ctx->mrb;
   int arena_index = mrb_gc_arena_save(mrb);
 
-  mrb_value argv[] = {mrb_int_value(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
-  mrb_yield(mrb, mrb_cares_ctx->block, mrb_obj_new(mrb, mrb_cares_ctx->cares_socket_class, NELEMS(argv), argv));
+  struct mrb_jmpbuf* prev_jmp = mrb->jmp;
+  struct mrb_jmpbuf c_jmp;
+
+  MRB_TRY(&c_jmp)
+  {
+    mrb->jmp = &c_jmp;
+    mrb_value argv[] = {mrb_int_value(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
+    mrb_yield(mrb, mrb_cares_ctx->block, mrb_obj_new(mrb, mrb_cares_ctx->cares_socket_class, NELEMS(argv), argv));
+    mrb->jmp = prev_jmp;
+  }
+  MRB_CATCH(&c_jmp)
+  {
+    mrb->jmp = prev_jmp;
+  }
+  MRB_END_EXC(&c_jmp);
+
   mrb_gc_arena_restore(mrb, arena_index);
 }
 
@@ -82,7 +116,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
     mrb_raise(mrb, E_TYPE_ERROR, "not a block");
   }
   mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "options"), options_val);
-  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "block"),   block);
+  mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "block"), block);
 
   struct mrb_cares_ctx *mrb_cares_ctx = mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_ctx));
   mrb_data_init(self, mrb_cares_ctx, &mrb_cares_ctx_type);
@@ -90,11 +124,14 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   mrb_cares_ctx->addrinfo_class = mrb_class_get(mrb, "Addrinfo");
   mrb_cares_ctx->cares_addrinfo_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "_Addrinfo");
   mrb_cares_ctx->cares_socket_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "Socket");
+  mrb_cares_ctx->cares = self;
   mrb_cares_ctx->block = block;
   mrb_cares_ctx->channel = NULL;
+
   mrb_cares_options->options.sock_state_cb = mrb_ares_state_callback;
   mrb_cares_options->options.sock_state_cb_data = mrb_cares_ctx;
   mrb_cares_options->optmask |= ARES_OPT_SOCK_STATE_CB;
+
   int rc = ares_init_options(&mrb_cares_ctx->channel, &mrb_cares_options->options, mrb_cares_options->optmask);
   if (unlikely(rc != ARES_SUCCESS))
     mrb_cares_usage_error(mrb, "ares_init_options", rc);
@@ -112,14 +149,13 @@ struct mrb_cares_addrinfo **mrb_cares_addrinfo)
   Data_Make_Struct(mrb,
   mrb_cares_ctx->cares_addrinfo_class, struct mrb_cares_addrinfo,
   &mrb_cares_addrinfo_type, *mrb_cares_addrinfo, addrinfo_data);
-  (*mrb_cares_addrinfo)->cares = self;
   (*mrb_cares_addrinfo)->mrb_cares_ctx = mrb_cares_ctx;
   (*mrb_cares_addrinfo)->family = ss->ss_family;
   (*mrb_cares_addrinfo)->block = block;
   mrb_value addrinfo = mrb_obj_value(addrinfo_data);
+  (*mrb_cares_addrinfo)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(addrinfo)), 36));
   mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "cares"), self);
   mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "block"), block);
-  (*mrb_cares_addrinfo)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(addrinfo)), 36));
 
   return addrinfo;
 }
@@ -220,6 +256,53 @@ mrb_ares_process_fd(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
+mrb_ares_set_servers_ports_csv(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  const char *servers;
+  mrb_get_args(mrb, "z", &servers);
+
+  int rc = ares_set_servers_ports_csv(mrb_cares_ctx->channel, servers);
+  if (unlikely(rc != ARES_SUCCESS)) {
+    mrb_cares_usage_error(mrb, "ares_set_servers_ports_csv", rc);
+  }
+  return self;
+}
+
+static mrb_value
+mrb_ares_set_local_ip4(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  const char *local_ip4;
+  mrb_get_args(mrb, "z", &local_ip4);
+  struct in_addr addr;
+  if (ares_inet_pton(AF_INET, local_ip4, &(addr.s_addr)) != 0) {
+    mrb_sys_fail(mrb, "ares_inet_pton");
+  }
+
+  ares_set_local_ip4(mrb_cares_ctx->channel, addr.s_addr);
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_set_local_ip6(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  const char *local_ip6;
+  mrb_get_args(mrb, "z", &local_ip6);
+
+  unsigned char buf[sizeof(struct in6_addr)];
+  if (ares_inet_pton(AF_INET6, local_ip6, buf) != 0) {
+    mrb_sys_fail(mrb, "ares_inet_pton");
+  }
+
+  ares_set_local_ip6(mrb_cares_ctx->channel, buf);
+
+  return self;
+}
+
+static mrb_value
 mrb_ares_options_new(mrb_state *mrb, mrb_value self)
 {
   struct mrb_cares_options *mrb_cares_options = mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_options));
@@ -238,11 +321,15 @@ mrb_ares_options_flags_get(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_flags_set(mrb_state *mrb, mrb_value self)
 {
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_int flags;
   mrb_get_args(mrb, "i", &flags);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_cares_options->options.flags = (int) flags;
-  mrb_cares_options->optmask |= ARES_OPT_FLAGS;
+  if (flags) {
+    mrb_cares_options->optmask |= ARES_OPT_FLAGS;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_FLAGS;
+  }
 
   return self;
 }
@@ -256,11 +343,15 @@ mrb_ares_options_timeout_get(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_timeout_set(mrb_state *mrb, mrb_value self)
 {
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_int timeout;
   mrb_get_args(mrb, "i", &timeout);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_cares_options->options.timeout = (int) timeout;
-  mrb_cares_options->optmask |= ARES_OPT_TIMEOUTMS;
+  if (timeout) {
+    mrb_cares_options->optmask |= ARES_OPT_TIMEOUTMS;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_TIMEOUTMS;
+  }
 
   return self;
 }
@@ -274,11 +365,15 @@ mrb_ares_options_tries_get(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_tries_set(mrb_state *mrb, mrb_value self)
 {
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_int tries;
   mrb_get_args(mrb, "i", &tries);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_cares_options->options.tries = (int) tries;
-  mrb_cares_options->optmask |= ARES_OPT_TRIES;
+  if (tries) {
+    mrb_cares_options->optmask |= ARES_OPT_TRIES;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_TRIES;
+  }
 
   return self;
 }
@@ -292,11 +387,122 @@ mrb_ares_options_ndots_get(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_ndots_set(mrb_state *mrb, mrb_value self)
 {
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_int ndots;
   mrb_get_args(mrb, "i", &ndots);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_cares_options->options.ndots = (int) ndots;
-  mrb_cares_options->optmask |= ARES_OPT_NDOTS;
+  if (ndots) {
+    mrb_cares_options->optmask |= ARES_OPT_NDOTS;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_NDOTS;
+  }
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+
+  mrb_value *argv;
+  mrb_int argc;
+  mrb_get_args(mrb, "*", &argv, &argc);
+  mrb_cares_options->options.domains = mrb_realloc(mrb, mrb_cares_options->options.domains, argc * sizeof(mrb_value));
+  mrb_cares_options->options.ndomains = (int) argc;
+
+  if (argc) {
+    for (int i = 0; i < argc; i++) {
+      mrb_cares_options->options.domains[i] = mrb_string_value_cstr(mrb, &argv[i]);
+    }
+    mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@domains"), mrb_ary_new_from_values(mrb, argc, argv));
+    mrb_cares_options->optmask |= ARES_OPT_DOMAINS;
+  } else {
+    mrb_cares_options->options.domains = NULL;
+    mrb_iv_remove(mrb, self, mrb_intern_lit(mrb, "@domains"));
+    mrb_cares_options->optmask &= ~ARES_OPT_DOMAINS;
+  }
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_ednspsz_get(mrb_state *mrb, mrb_value self)
+{
+  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.ednspsz);
+}
+
+static mrb_value
+mrb_ares_options_ednspsz_set(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+  mrb_int ednspsz;
+  mrb_get_args(mrb, "i", &ednspsz);
+  mrb_cares_options->options.ednspsz = (int) ednspsz;
+  if (ednspsz) {
+    mrb_cares_options->optmask |= ARES_OPT_EDNSPSZ;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_EDNSPSZ;
+  }
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_resolvconf_path_set(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+  mrb_value resolvconf_path;
+  mrb_get_args(mrb, "S!", &resolvconf_path);
+  if (mrb_string_p(resolvconf_path)) {
+    mrb_cares_options->options.resolvconf_path = mrb_string_value_cstr(mrb, &resolvconf_path);
+    mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@resolvconf_path"), resolvconf_path);
+    mrb_cares_options->optmask |= ARES_OPT_RESOLVCONF;
+  } else {
+    mrb_cares_options->options.resolvconf_path = NULL;
+    mrb_iv_remove(mrb, self, mrb_intern_lit(mrb, "@resolvconf_path"));
+    mrb_cares_options->optmask &= ~ARES_OPT_RESOLVCONF;
+  }
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_hosts_path_set(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+  mrb_value hosts_path;
+  mrb_get_args(mrb, "S!", &hosts_path);
+  if (mrb_string_p(hosts_path)) {
+    mrb_cares_options->options.hosts_path = mrb_string_value_cstr(mrb, &hosts_path);
+    mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@hosts_path"), hosts_path);
+    mrb_cares_options->optmask |= ARES_OPT_HOSTS_FILE;
+  } else {
+    mrb_cares_options->options.hosts_path = NULL;
+    mrb_iv_remove(mrb, self, mrb_intern_lit(mrb, "@hosts_path"));
+    mrb_cares_options->optmask &= ~ARES_OPT_HOSTS_FILE;
+  }
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_options_udp_max_queries_get(mrb_state *mrb, mrb_value self)
+{
+  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.udp_max_queries);
+}
+
+static mrb_value
+mrb_ares_options_udp_max_queries_set(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
+  mrb_int udp_max_queries;
+  mrb_get_args(mrb, "i", &udp_max_queries);
+  mrb_cares_options->options.udp_max_queries = (int) udp_max_queries;
+  if (udp_max_queries) {
+    mrb_cares_options->optmask |= ARES_OPT_UDP_MAX_QUERIES;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_UDP_MAX_QUERIES;
+  }
 
   return self;
 }
@@ -310,47 +516,37 @@ mrb_ares_options_maxtimeout_get(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_maxtimeout_set(mrb_state *mrb, mrb_value self)
 {
+  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_int maxtimeout;
   mrb_get_args(mrb, "i", &maxtimeout);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
   mrb_cares_options->options.maxtimeout = (int) maxtimeout;
-  mrb_cares_options->optmask |= ARES_OPT_MAXTIMEOUTMS;
+  if (maxtimeout) {
+    mrb_cares_options->optmask |= ARES_OPT_MAXTIMEOUTMS;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_MAXTIMEOUTMS;
+  }
 
   return self;
 }
 
 static mrb_value
-mrb_ares_options_udp_port_get(mrb_state *mrb, mrb_value self)
+mrb_ares_options_qcache_max_ttl_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.udp_port);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.qcache_max_ttl);
 }
 
 static mrb_value
-mrb_ares_options_udp_port_set(mrb_state *mrb, mrb_value self)
+mrb_ares_options_qcache_max_ttl_set(mrb_state *mrb, mrb_value self)
 {
-  mrb_int udp_port;
-  mrb_get_args(mrb, "i", &udp_port);
   struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
-  mrb_cares_options->options.udp_port = (unsigned short) udp_port;
-  mrb_cares_options->optmask |= ARES_OPT_UDP_PORT;
-
-  return self;
-}
-
-static mrb_value
-mrb_ares_options_tcp_port_get(mrb_state *mrb, mrb_value self)
-{
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.tcp_port);
-}
-
-static mrb_value
-mrb_ares_options_tcp_port_set(mrb_state *mrb, mrb_value self)
-{
-  mrb_int tcp_port;
-  mrb_get_args(mrb, "i", &tcp_port);
-  struct mrb_cares_options *mrb_cares_options = DATA_PTR(self);
-  mrb_cares_options->options.tcp_port = (unsigned short) tcp_port;
-  mrb_cares_options->optmask |= ARES_OPT_TCP_PORT;
+  mrb_int qcache_max_ttl;
+  mrb_get_args(mrb, "i", &qcache_max_ttl);
+  mrb_cares_options->options.qcache_max_ttl = (unsigned int) qcache_max_ttl;
+  if (qcache_max_ttl) {
+    mrb_cares_options->optmask |= ARES_OPT_QUERY_CACHE;
+  } else {
+    mrb_cares_options->optmask &= ~ARES_OPT_QUERY_CACHE;
+  }
 
   return self;
 }
@@ -373,27 +569,36 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
 
   mrb_ares_class = mrb_define_class(mrb, "Ares", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_class, MRB_TT_CDATA);
-  mrb_define_method(mrb,  mrb_ares_class, "initialize",   mrb_ares_init_options,MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
-  mrb_define_method(mrb,  mrb_ares_class, "getaddrinfo",  mrb_ares_getaddrinfo, MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
-  mrb_define_method(mrb,  mrb_ares_class, "timeout",      mrb_ares_timeout,     MRB_ARGS_OPT(1));
-  mrb_define_method(mrb,  mrb_ares_class, "process_fd",   mrb_ares_process_fd,  MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, mrb_ares_class, "initialize",        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
+  mrb_define_method(mrb, mrb_ares_class, "getaddrinfo",       mrb_ares_getaddrinfo,           MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
+  mrb_define_method(mrb, mrb_ares_class, "timeout",           mrb_ares_timeout,               MRB_ARGS_OPT(1));
+  mrb_define_method(mrb, mrb_ares_class, "process_fd",        mrb_ares_process_fd,            MRB_ARGS_REQ(2));
+  mrb_define_method(mrb, mrb_ares_class, "servers_ports_csv=",mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_class, "local_ip4=",        mrb_ares_set_local_ip4,         MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_class, "local_ip6=",        mrb_ares_set_local_ip6,         MRB_ARGS_REQ(1));
   mrb_ares_options_class = mrb_define_class_under(mrb, mrb_ares_class, "Options", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_options_class, MRB_TT_CDATA);
-  mrb_define_method(mrb, mrb_ares_options_class, "initialize",  mrb_ares_options_new,             MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "flags",       mrb_ares_options_flags_get,       MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "flags=",      mrb_ares_options_flags_set,       MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "timeout",     mrb_ares_options_timeout_get,     MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "timeout=",    mrb_ares_options_timeout_set,     MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "tries",       mrb_ares_options_tries_get,       MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "tries=",      mrb_ares_options_tries_set,       MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "ndots",       mrb_ares_options_ndots_get,       MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "ndots=",      mrb_ares_options_ndots_set,       MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout",  mrb_ares_options_maxtimeout_get,  MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout=", mrb_ares_options_maxtimeout_set,  MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "udp_port",    mrb_ares_options_udp_port_get,    MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "udp_port=",   mrb_ares_options_udp_port_set,    MRB_ARGS_REQ(1));
-  mrb_define_method(mrb, mrb_ares_options_class, "tcp_port",    mrb_ares_options_tcp_port_get,    MRB_ARGS_NONE());
-  mrb_define_method(mrb, mrb_ares_options_class, "tcp_port=",   mrb_ares_options_tcp_port_set,    MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "initialize",      mrb_ares_options_new,                 MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "flags",           mrb_ares_options_flags_get,           MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "flags=",          mrb_ares_options_flags_set,           MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "timeout",         mrb_ares_options_timeout_get,         MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "timeout=",        mrb_ares_options_timeout_set,         MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "tries",           mrb_ares_options_tries_get,           MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "tries=",          mrb_ares_options_tries_set,           MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "ndots",           mrb_ares_options_ndots_get,           MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "ndots=",          mrb_ares_options_ndots_set,           MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "domains_set",     mrb_ares_options_domains_set,         MRB_ARGS_ANY());
+  mrb_define_method(mrb, mrb_ares_options_class, "ednspsz",         mrb_ares_options_ednspsz_get,         MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "ednspsz=",        mrb_ares_options_ednspsz_set,         MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "resolvconf_path=",mrb_ares_options_resolvconf_path_set, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "hosts_path=",     mrb_ares_options_hosts_path_set,      MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "udp_max_queries", mrb_ares_options_udp_max_queries_get, MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "udp_max_queries=",mrb_ares_options_udp_max_queries_set, MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout",      mrb_ares_options_maxtimeout_get,      MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout=",     mrb_ares_options_maxtimeout_set,      MRB_ARGS_REQ(1));
+  mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl",  mrb_ares_options_qcache_max_ttl_get,  MRB_ARGS_NONE());
+  mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl=", mrb_ares_options_qcache_max_ttl_set,  MRB_ARGS_REQ(1));
+
   mrb_ares_addrinfo_class = mrb_define_class_under(mrb, mrb_ares_class, "_Addrinfo", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_addrinfo_class, MRB_TT_CDATA);
   mrb_ares_error_class = mrb_define_class_under(mrb, mrb_ares_class, "Error", E_RUNTIME_ERROR);
