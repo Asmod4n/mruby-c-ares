@@ -314,6 +314,7 @@ mrb_ares_options_new(mrb_state *mrb, mrb_value self)
   return self;
 }
 
+#ifdef ARES_OPT_FLAGS
 static mrb_value
 mrb_ares_options_flags_get(mrb_state *mrb, mrb_value self)
 {
@@ -336,6 +337,9 @@ mrb_ares_options_flags_set(mrb_state *mrb, mrb_value self)
   return self;
 }
 
+#endif
+
+#ifdef ARES_OPT_TIMEOUTMS
 static mrb_value
 mrb_ares_options_timeout_get(mrb_state *mrb, mrb_value self)
 {
@@ -357,7 +361,8 @@ mrb_ares_options_timeout_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_TRIES
 static mrb_value
 mrb_ares_options_tries_get(mrb_state *mrb, mrb_value self)
 {
@@ -379,7 +384,8 @@ mrb_ares_options_tries_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_NDOTS
 static mrb_value
 mrb_ares_options_ndots_get(mrb_state *mrb, mrb_value self)
 {
@@ -401,7 +407,8 @@ mrb_ares_options_ndots_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_DOMAINS
 static mrb_value
 mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
 {
@@ -426,7 +433,8 @@ mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
   }
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_EDNSPSZ
 static mrb_value
 mrb_ares_options_ednspsz_get(mrb_state *mrb, mrb_value self)
 {
@@ -448,7 +456,8 @@ mrb_ares_options_ednspsz_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_RESOLVCONF
 static mrb_value
 mrb_ares_options_resolvconf_path_set(mrb_state *mrb, mrb_value self)
 {
@@ -467,7 +476,8 @@ mrb_ares_options_resolvconf_path_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_HOSTS_FILE
 static mrb_value
 mrb_ares_options_hosts_path_set(mrb_state *mrb, mrb_value self)
 {
@@ -486,7 +496,8 @@ mrb_ares_options_hosts_path_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_UDP_MAX_QUERIES
 static mrb_value
 mrb_ares_options_udp_max_queries_get(mrb_state *mrb, mrb_value self)
 {
@@ -508,7 +519,8 @@ mrb_ares_options_udp_max_queries_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_MAXTIMEOUTMS
 static mrb_value
 mrb_ares_options_maxtimeout_get(mrb_state *mrb, mrb_value self)
 {
@@ -530,7 +542,8 @@ mrb_ares_options_maxtimeout_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
+#ifdef ARES_OPT_QUERY_CACHE
 static mrb_value
 mrb_ares_options_qcache_max_ttl_get(mrb_state *mrb, mrb_value self)
 {
@@ -552,7 +565,7 @@ mrb_ares_options_qcache_max_ttl_set(mrb_state *mrb, mrb_value self)
 
   return self;
 }
-
+#endif
 void
 mrb_mruby_c_ares_gem_init(mrb_state* mrb)
 {
@@ -571,6 +584,7 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
 
   mrb_ares_class = mrb_define_class(mrb, "Ares", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_class, MRB_TT_CDATA);
+  mrb_define_const (mrb, mrb_ares_class, "VERSION",           mrb_str_new_lit_frozen(mrb, ARES_VERSION_STR));
   mrb_define_method(mrb, mrb_ares_class, "initialize",        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "getaddrinfo",       mrb_ares_getaddrinfo,           MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "timeout",           mrb_ares_timeout,               MRB_ARGS_OPT(1));
@@ -581,26 +595,47 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   mrb_ares_options_class = mrb_define_class_under(mrb, mrb_ares_class, "Options", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_options_class, MRB_TT_CDATA);
   mrb_define_method(mrb, mrb_ares_options_class, "initialize",      mrb_ares_options_new,                 MRB_ARGS_NONE());
+#ifdef ARES_OPT_FLAGS
   mrb_define_method(mrb, mrb_ares_options_class, "flags",           mrb_ares_options_flags_get,           MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "flags=",          mrb_ares_options_flags_set,           MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_TIMEOUTMS
   mrb_define_method(mrb, mrb_ares_options_class, "timeout",         mrb_ares_options_timeout_get,         MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "timeout=",        mrb_ares_options_timeout_set,         MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_TRIES
   mrb_define_method(mrb, mrb_ares_options_class, "tries",           mrb_ares_options_tries_get,           MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "tries=",          mrb_ares_options_tries_set,           MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_NDOTS
   mrb_define_method(mrb, mrb_ares_options_class, "ndots",           mrb_ares_options_ndots_get,           MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "ndots=",          mrb_ares_options_ndots_set,           MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_DOMAINS
   mrb_define_method(mrb, mrb_ares_options_class, "domains_set",     mrb_ares_options_domains_set,         MRB_ARGS_ANY());
+#endif
+#ifdef ARES_OPT_EDNSPSZ
   mrb_define_method(mrb, mrb_ares_options_class, "ednspsz",         mrb_ares_options_ednspsz_get,         MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "ednspsz=",        mrb_ares_options_ednspsz_set,         MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_RESOLVCONF
   mrb_define_method(mrb, mrb_ares_options_class, "resolvconf_path=",mrb_ares_options_resolvconf_path_set, MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_HOSTS_FILE
   mrb_define_method(mrb, mrb_ares_options_class, "hosts_path=",     mrb_ares_options_hosts_path_set,      MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_UDP_MAX_QUERIES
   mrb_define_method(mrb, mrb_ares_options_class, "udp_max_queries", mrb_ares_options_udp_max_queries_get, MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "udp_max_queries=",mrb_ares_options_udp_max_queries_set, MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_MAXTIMEOUTMS
   mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout",      mrb_ares_options_maxtimeout_get,      MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "maxtimeout=",     mrb_ares_options_maxtimeout_set,      MRB_ARGS_REQ(1));
+#endif
+#ifdef ARES_OPT_QUERY_CACHE
   mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl",  mrb_ares_options_qcache_max_ttl_get,  MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl=", mrb_ares_options_qcache_max_ttl_set,  MRB_ARGS_REQ(1));
-
+#endif
   mrb_ares_addrinfo_class = mrb_define_class_under(mrb, mrb_ares_class, "_Addrinfo", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_addrinfo_class, MRB_TT_CDATA);
   mrb_ares_error_class = mrb_define_class_under(mrb, mrb_ares_class, "Error", E_RUNTIME_ERROR);

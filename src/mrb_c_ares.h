@@ -38,6 +38,9 @@
 #include <mruby/throw.h>
 
 #include <ares.h>
+#if !((ARES_VERSION_MAJOR == 1 && ARES_VERSION_MINOR >= 16) || ARES_VERSION_MAJOR > 1)
+#error "mruby-c-ares needs at least c-ares Version 1.16.0"
+#endif
 
 #if (__GNUC__ >= 3) || (__INTEL_COMPILER >= 800) || defined(__clang__)
 # define likely(x) __builtin_expect(!!(x), 1)
@@ -89,7 +92,9 @@ static void
 mrb_cares_options_free(mrb_state *mrb, void *p)
 {
   struct mrb_cares_options *mrb_cares_options = (struct mrb_cares_options *) p;
+#ifdef ARES_OPT_DOMAINS
   mrb_free(mrb, mrb_cares_options->options.domains);
+#endif
   mrb_free(mrb, p);
 }
 
