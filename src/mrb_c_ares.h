@@ -60,7 +60,6 @@ struct mrb_cares_ctx {
   mrb_state *mrb;
   struct RClass *addrinfo_class;
   struct RClass *cares_addrinfo_class;
-  struct RClass *cares_socket_class;
   mrb_value cares;
   mrb_value block;
   ares_channel_t *channel;

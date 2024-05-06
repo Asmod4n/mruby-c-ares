@@ -31,9 +31,7 @@ static void
 mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
   struct mrb_cares_addrinfo *mrb_cares_addrinfo = (struct mrb_cares_addrinfo *) arg;
-  if (status == ARES_EDESTRUCTION)
-    return;
-  if (status == ARES_ECANCELLED)
+  if (ARES_EDESTRUCTION == status || ARES_ECANCELLED == status)
     return;
 
   mrb_state *mrb = mrb_cares_addrinfo->mrb_cares_ctx->mrb;
@@ -92,7 +90,7 @@ mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int w
   {
     mrb->jmp = &c_jmp;
     mrb_value argv[] = {mrb_int_value(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
-    mrb_yield(mrb, mrb_cares_ctx->block, mrb_obj_new(mrb, mrb_cares_ctx->cares_socket_class, NELEMS(argv), argv));
+    mrb_yield_argv(mrb, mrb_cares_ctx->block, NELEMS(argv), argv);
     mrb->jmp = prev_jmp;
   }
   MRB_CATCH(&c_jmp)
@@ -124,7 +122,6 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   mrb_cares_ctx->mrb = mrb;
   mrb_cares_ctx->addrinfo_class = mrb_class_get(mrb, "Addrinfo");
   mrb_cares_ctx->cares_addrinfo_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "_Addrinfo");
-  mrb_cares_ctx->cares_socket_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "Socket");
   mrb_cares_ctx->cares = self;
   mrb_cares_ctx->block = block;
   mrb_cares_ctx->channel = NULL;

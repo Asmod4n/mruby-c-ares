@@ -1,7 +1,7 @@
 server = TCPServer.new('::', 0)
 poll = Poll.new
-ares = Ares.new do |socket|
-  poll.remove_update_or_add(socket, (socket.readable? ? Poll::In : 0)|(socket.writable? ? Poll::Out : 0))
+ares = Ares.new do |socket, readable, writable|
+  poll.remove_update_or_add(socket, (readable ? Poll::In : 0)|(writable ? Poll::Out : 0))
 end
 
 ares.getaddrinfo(server, "www.ruby-lang.org", "https") do |cname, ai, error|
