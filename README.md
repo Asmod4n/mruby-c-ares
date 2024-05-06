@@ -65,10 +65,10 @@ ares.getaddrinfo expects a socket as it's first parameter optionally, it checks 
 ares.timeout returns how long the current operations timeout is, once the current operations have completed 0.0 is returned.
 ares.timeout returns a mruby float with seconds and miliseconds as the remainder.
 
-Ares.new takes a optional Argument, the Argument are options for context initialization.
+Ares.new takes a optional Argument for options during context initialization.
 The current supported options can be seen in ```mrblib/ares.rb```.
-For flags which can be set in Ares::Options, take a look at https://c-ares.org/ares_init_options.html
-every flag is covered, you can get them via Ares::FLAG_EDNS for example.
+For what those options do take a look at https://c-ares.org/ares_init_options.html
+Which options can be used depends on your installed c-ares library Version, calling ```Ares::Options::AVAILABLE_OPTIONS``` shows you all available ones.
 
 There are three more functions for a Ares context, servers_ports_csv=, local_ip4= and local_ip6=
 ares.servers_ports_csv= excepts a string with the following formatting ip[:port][%iface], separated by commas.
