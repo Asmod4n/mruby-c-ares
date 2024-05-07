@@ -33,10 +33,9 @@ ares.getaddrinfo("localhost", "ircd") do |timeouts, cname, ai, error|
   puts ai.inspect
 end
 
-ares.getnameinfo(Socket::AF_INET, "185.199.111.153") do |timeouts, name, service, error|
+ares.getnameinfo(Socket::AF_INET, "185.199.111.153", 443) do |timeouts, name, service, error|
   puts "ruby-lang-reverse"
   puts "name: #{name} service: #{service}"
-  puts error.inspect
 end
 
 while ((timeout = ares.timeout) > 0.0)

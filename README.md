@@ -75,7 +75,7 @@ ares.servers_ports_csv= excepts a string with the following formatting ip[:port]
 Take a look at https://c-ares.org/ares_set_servers_ports_csv.html for more information.
 
 ares.local_ip4= excepts a dotted IPv4 Address. ares.local_ip6= excepts a IPv6 Address.
-It sets the local Adress from which requests are made.
+It sets the local Address from which requests are made.
 
 Error Handling
 ==============

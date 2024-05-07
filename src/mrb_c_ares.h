@@ -62,7 +62,7 @@ struct mrb_cares_ctx {
   struct RClass *cares_args_class;
   mrb_value cares;
   mrb_value block;
-  ares_channel_t *channel;
+  ares_channel channel;
   mrb_bool destruction;
 };
 
