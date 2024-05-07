@@ -3,22 +3,8 @@
 static mrb_value
 mrb_cares_get_ai(struct mrb_cares_addrinfo *mrb_cares_addrinfo, struct ares_addrinfo_node *node)
 {
-  mrb_value storage;
-  if (mrb_cares_addrinfo->family == AF_INET6 && node->ai_family == AF_INET) {
-    struct sockaddr_in *sa_in     = (struct sockaddr_in *) node->ai_addr;
-    struct sockaddr_in6 sa_in6    = {0};
-    sa_in6.sin6_family            = AF_INET6;
-    sa_in6.sin6_port              = sa_in->sin_port;
-    sa_in6.sin6_addr.s6_addr[10]  = 0xff;
-    sa_in6.sin6_addr.s6_addr[11]  = 0xff;
-    memcpy(sa_in6.sin6_addr.s6_addr + 12, &sa_in->sin_addr, sizeof(sa_in->sin_addr));
-    storage = mrb_str_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, (const char *) &sa_in6, sizeof(sa_in6));
-  } else {
-    storage = mrb_str_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen);
-  }
-
   mrb_value argv[] = {
-    storage,
+    mrb_str_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen),
     mrb_fixnum_value(node->ai_family),
     mrb_fixnum_value(node->ai_socktype),
     mrb_fixnum_value(node->ai_protocol)
@@ -141,7 +127,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_cares_make_addrinfo_struct(mrb_state *mrb,
 mrb_value self, struct mrb_cares_ctx *mrb_cares_ctx,
-mrb_value block, struct sockaddr_storage *ss,
+mrb_value block,
 struct mrb_cares_addrinfo **mrb_cares_addrinfo)
 {
   struct RData *addrinfo_data;
@@ -149,7 +135,6 @@ struct mrb_cares_addrinfo **mrb_cares_addrinfo)
   mrb_cares_ctx->cares_addrinfo_class, struct mrb_cares_addrinfo,
   &mrb_cares_addrinfo_type, *mrb_cares_addrinfo, addrinfo_data);
   (*mrb_cares_addrinfo)->mrb_cares_ctx = mrb_cares_ctx;
-  (*mrb_cares_addrinfo)->family = ss->ss_family;
   (*mrb_cares_addrinfo)->block = block;
   mrb_value addrinfo = mrb_obj_value(addrinfo_data);
   (*mrb_cares_addrinfo)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(addrinfo)), 36));
@@ -163,54 +148,47 @@ static mrb_value
 mrb_ares_getaddrinfo(mrb_state *mrb, mrb_value self)
 {
   struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
-  mrb_value sock, name, service, block = mrb_nil_value();
-  mrb_get_args(mrb, "oSS&", &sock, &name, &service, &block);
-  ares_socket_t socket = (ares_socket_t) mrb_integer(mrb_convert_type(mrb, sock, MRB_TT_INTEGER, "Integer", "fileno"));
+  const char *name = NULL, *service;
+  mrb_value service_val;
+  mrb_int flags = 0, family = AF_UNSPEC, socktype = 0, protocol = 0;
+  mrb_value block = mrb_nil_value();
+  mrb_get_args(mrb, "z!o|iiii&", &name, &service_val, &flags, &family, &socktype, &protocol, &block);
+
+  switch(mrb_type(service_val)) {
+    case MRB_TT_FALSE: {
+      service = NULL;
+    } break;
+    case MRB_TT_INTEGER: {
+      service_val = mrb_integer_to_str(mrb, service_val, 10);
+      flags |= ARES_AI_NUMERICSERV;
+    }
+    case MRB_TT_STRING: {
+      service = mrb_string_value_cstr(mrb, &service_val);
+    } break;
+    default:
+      mrb_raise(mrb, E_TYPE_ERROR, "wrong service type, can be nil, Integer or String");
+  }
   if (unlikely(mrb_nil_p(block))) {
     mrb_raise(mrb, E_ARGUMENT_ERROR, "no block given");
   }
   if (unlikely(MRB_TT_PROC != mrb_type(block))) {
     mrb_raise(mrb, E_TYPE_ERROR, "not a block");
   }
-  struct sockaddr_storage ss;
-  socklen_t optlen = sizeof(ss);
-  if (unlikely(getsockname(socket, (struct sockaddr *) &ss, &optlen) == -1)) {
-    mrb_sys_fail(mrb, "getsockname");
-  }
-  int socktype;
-  optlen = sizeof(socktype);
-  if (unlikely(getsockopt(socket, SOL_SOCKET, SO_TYPE, &socktype, &optlen) == -1)) {
-    mrb_sys_fail(mrb, "getsockopt");
-  }
+
   struct ares_addrinfo_hints hints = {
-    .ai_family = ss.ss_family,
-    .ai_socktype = socktype
+    .ai_flags = (int) flags,
+    .ai_family = (int) family,
+    .ai_socktype = (int) socktype,
+    .ai_protocol = (int) protocol
   };
 
   struct mrb_cares_addrinfo *mrb_cares_addrinfo;
-  mrb_value addrinfo = mrb_cares_make_addrinfo_struct(mrb, self, mrb_cares_ctx, block, &ss, &mrb_cares_addrinfo);
+  mrb_value addrinfo = mrb_cares_make_addrinfo_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_addrinfo);
 
-  switch (ss.ss_family) {
-    case AF_INET: {
-      ares_getaddrinfo(mrb_cares_ctx->channel,
-      mrb_string_value_cstr(mrb, &name), mrb_string_value_cstr(mrb, &service),
-      &hints, mrb_ares_getaddrinfo_callback, mrb_cares_addrinfo);
-    } break;
-    case AF_INET6: {
-      int v6_only = 0;
-      optlen = sizeof(v6_only);
-      getsockopt(socket, IPPROTO_IPV6, IPV6_V6ONLY, &v6_only, &optlen);
-      if (!v6_only) {
-        hints.ai_family = AF_UNSPEC;
-      }
-      ares_getaddrinfo(mrb_cares_ctx->channel,
-      mrb_string_value_cstr(mrb, &name), mrb_string_value_cstr(mrb, &service),
-      &hints, mrb_ares_getaddrinfo_callback, mrb_cares_addrinfo);
-    } break;
-    default: {
-      mrb_raise(mrb, E_ARGUMENT_ERROR, "Not a IPv4 or IPv6 socket");
-    }
-  }
+  ares_getaddrinfo(mrb_cares_ctx->channel,
+    name, service,
+    &hints,
+    mrb_ares_getaddrinfo_callback, mrb_cares_addrinfo);
 
   mrb_iv_set(mrb, self, mrb_cares_addrinfo->obj_id, addrinfo); 
 

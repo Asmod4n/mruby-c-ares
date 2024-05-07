@@ -18,33 +18,32 @@ create a build_config.rb file and add gem mgem: 'mruby-c-ares' to it
 Usage examples
 ==============
 
-Currently only getaddrinfo is implemented, aka resolve a hostname to a IPv(4|6) Address, if you need more let me know!
+Currently only getaddrinfo is implemented, if you need more let me know!
 
 requires 'mruby-poll' IO.select will be implemented later.
 ```ruby
-server = TCPServer.new('::', 0)
 poll = Poll.new
 ares = Ares.new do |socket, readable, writable|
   poll.remove_update_or_add(socket, (readable ? Poll::In : 0)|(writable ? Poll::Out : 0))
 end
 
-ares.getaddrinfo(server, "redirect.github.com", "https") do |cname, ai, error|
+ares.getaddrinfo("redirect.github.com", "https") do |cname, ai, error|
   puts "github"
   puts ai.inspect
 end
 
-ares.getaddrinfo(server, "www.qwgeqgh.org", "qegqe") do |cname, ai, error|
+ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |cname, ai, error|
   puts "error"
   puts error.inspect
 end
 
-ares.getaddrinfo(server, "www.ruby-lang.org", "https") do |cname, ai, error|
+ares.getaddrinfo("www.ruby-lang.org", "https") do |cname, ai, error|
   puts "ruby-lang"
   puts cname.inspect
   puts ai.inspect
 end
 
-ares.getaddrinfo(server, "localhost", "ircd") do |cname, ai, error|
+ares.getaddrinfo("localhost", "ircd") do |cname, ai, error|
   puts "localhost"
   puts ai.inspect
 end
@@ -60,10 +59,11 @@ Lets go through it.
 Ares.new creates a new Arex context, you have to supply a function which polls on its supplied Sockets.
 socket.readable? and socket.writable? return false at the same time when you don't have to poll on the socket anymore.
 
-ares.getaddrinfo expects a socket as it's first parameter optionally, it checks what type of socket is passed and calls a callback with relevant information for that type of socket, you can immediately connect to every entry of the returned Addrinfo array, you only get replies the socket you supplied can handle.
+ares.getaddrinfo takes up to 6 arguments, the name to lookup, the service, flags, the address family, the socktype, and the protocol.
+Take a look at https://c-ares.org/ares_getaddrinfo.html for more informations.
+
 
 ares.timeout returns how long the current operations timeout is, once the current operations have completed 0.0 is returned.
-ares.timeout returns a mruby float with seconds and miliseconds as the remainder.
 
 Ares.new takes a optional Argument for options during context initialization.
 The current supported options can be seen in ```mrblib/ares.rb```.
@@ -86,8 +86,4 @@ In the example from above the second call to getaddrinfo returns one such error.
 
 Notes
 =====
-
-If you have run the example from above you might have seen the replies aren't in the order they were given.
-Thats because ares handles everything asynchronously, in normal ruby applications this isnt the case, socket operations are usally executed in the order they were given.
-
-Handling operations asynchronously has the possible benefit of making everything a bit faster, I'm currently writing a mRuby gem to expose fast handling of socket operations, stay stuned for more :)
+Ares Constants are mapped 1:1 to this library, when you take a look at the c-ares documentation you see constants like this ARES_AI_NUMERICSERV, they are available as Ares::AI_NUMERICSERV in this gem.

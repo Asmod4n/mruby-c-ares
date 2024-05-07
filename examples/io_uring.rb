@@ -1,4 +1,3 @@
-server = TCPServer.new('::', 0)
 uring = IO::Uring.new
 pollers =  {}
 ares = Ares.new do |socket, readable, writable|
@@ -13,23 +12,23 @@ ares = Ares.new do |socket, readable, writable|
   end
 end
 
-ares.getaddrinfo(server, "www.ruby-lang.org", "https") do |cname, ai, error|
+ares.getaddrinfo("www.ruby-lang.org", 443) do |cname, ai, error|
   puts "ruby-lang"
   puts cname.inspect
   puts ai.inspect
 end
 
-ares.getaddrinfo(server, "redirect.github.com", "https") do |cname, ai, error|
+ares.getaddrinfo("redirect.github.com", "https") do |cname, ai, error|
   puts "github"
   puts ai.inspect
 end
 
-ares.getaddrinfo(server, "www.qwgeqgh.org", "qegqe") do |cname, ai, error|
+ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |cname, ai, error|
   puts "error"
   puts error.inspect
 end
 
-ares.getaddrinfo(server, "localhost", "ircd") do |cname, ai, error|
+ares.getaddrinfo("localhost", "ircd") do |cname, ai, error|
   puts "localhost"
   puts ai.inspect
 end
