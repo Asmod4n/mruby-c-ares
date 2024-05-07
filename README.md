@@ -27,23 +27,23 @@ ares = Ares.new do |socket, readable, writable|
   poll.remove_update_or_add(socket, (readable ? Poll::In : 0)|(writable ? Poll::Out : 0))
 end
 
-ares.getaddrinfo("redirect.github.com", "https") do |cname, ai, error|
+ares.getaddrinfo("redirect.github.com", "https") do |timeouts, cname, ai, error|
   puts "github"
   puts ai.inspect
 end
 
-ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |cname, ai, error|
+ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |timeouts, cname, ai, error|
   puts "error"
   puts error.inspect
 end
 
-ares.getaddrinfo("www.ruby-lang.org", "https") do |cname, ai, error|
+ares.getaddrinfo("www.ruby-lang.org", "https") do |timeouts, cname, ai, error|
   puts "ruby-lang"
   puts cname.inspect
   puts ai.inspect
 end
 
-ares.getaddrinfo("localhost", "ircd") do |cname, ai, error|
+ares.getaddrinfo("localhost", "ircd") do |timeouts, cname, ai, error|
   puts "localhost"
   puts ai.inspect
 end

@@ -59,14 +59,14 @@
 struct mrb_cares_ctx {
   mrb_state *mrb;
   struct RClass *addrinfo_class;
-  struct RClass *cares_addrinfo_class;
+  struct RClass *cares_args_class;
   mrb_value cares;
   mrb_value block;
   ares_channel_t *channel;
   mrb_bool destruction;
 };
 
-struct mrb_cares_addrinfo {
+struct mrb_cares_args {
   struct mrb_cares_ctx *mrb_cares_ctx;
   mrb_value block;
   sa_family_t family;
@@ -101,8 +101,8 @@ static const struct mrb_data_type mrb_cares_ctx_type = {
   "$i_mrb_mrb_cares_ctx_t", mrb_cares_ctx_free
 };
 
-static const struct mrb_data_type mrb_cares_addrinfo_type = {
-  "$i_mrb_cares_addrinfo_t", mrb_free
+static const struct mrb_data_type mrb_cares_args_type = {
+  "$i_mrb_cares_args_t", mrb_free
 };
 
 static const struct mrb_data_type mrb_cares_options_type = {

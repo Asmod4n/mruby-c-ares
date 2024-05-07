@@ -12,25 +12,31 @@ ares = Ares.new do |socket, readable, writable|
   end
 end
 
-ares.getaddrinfo("www.ruby-lang.org", 443) do |cname, ai, error|
+ares.getaddrinfo("www.ruby-lang.org", 443) do |timeouts, cname, ai, error|
   puts "ruby-lang"
   puts cname.inspect
   puts ai.inspect
 end
 
-ares.getaddrinfo("redirect.github.com", "https") do |cname, ai, error|
+ares.getaddrinfo("redirect.github.com", "https") do |timeouts, cname, ai, error|
   puts "github"
   puts ai.inspect
 end
 
-ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |cname, ai, error|
+ares.getaddrinfo("www.qwgeqgh.org", "qegqe") do |timeouts, cname, ai, error|
   puts "error"
   puts error.inspect
 end
 
-ares.getaddrinfo("localhost", "ircd") do |cname, ai, error|
+ares.getaddrinfo("localhost", "ircd") do |timeouts, cname, ai, error|
   puts "localhost"
   puts ai.inspect
+end
+
+ares.getnameinfo(Socket::AF_INET, "185.199.111.153") do |timeouts, name, service, error|
+  puts "ruby-lang-reverse"
+  puts "name: #{name} service: #{service}"
+  puts error.inspect
 end
 
 while ((timeout = ares.timeout) > 0.0)

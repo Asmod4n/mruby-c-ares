@@ -1,52 +1,53 @@
 #include "mrb_c_ares.h"
 
 static mrb_value
-mrb_cares_get_ai(struct mrb_cares_addrinfo *mrb_cares_addrinfo, struct ares_addrinfo_node *node)
+mrb_cares_get_ai(struct mrb_cares_args *mrb_cares_args, struct ares_addrinfo_node *node)
 {
   mrb_value argv[] = {
-    mrb_str_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen),
+    mrb_str_new(mrb_cares_args->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen),
     mrb_fixnum_value(node->ai_family),
     mrb_fixnum_value(node->ai_socktype),
     mrb_fixnum_value(node->ai_protocol)
   };
 
-  return mrb_obj_new(mrb_cares_addrinfo->mrb_cares_ctx->mrb, mrb_cares_addrinfo->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
+  return mrb_obj_new(mrb_cares_args->mrb_cares_ctx->mrb, mrb_cares_args->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
 }
 
 static void 
 mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_addrinfo *result)
 {
-  struct mrb_cares_addrinfo *mrb_cares_addrinfo = (struct mrb_cares_addrinfo *) arg;
+  struct mrb_cares_args *mrb_cares_args = (struct mrb_cares_args *) arg;
   if (ARES_EDESTRUCTION == status || ARES_ECANCELLED == status)
     return;
 
-  mrb_state *mrb = mrb_cares_addrinfo->mrb_cares_ctx->mrb;
+  mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
   struct mrb_jmpbuf* prev_jmp = mrb->jmp;
   struct mrb_jmpbuf c_jmp;
 
   MRB_TRY(&c_jmp)
   {
     mrb->jmp = &c_jmp;
-    mrb_value argv[3] = {mrb_nil_value()};
+    mrb_value argv[4] = {mrb_nil_value()};
+    argv[0] = mrb_fixnum_value(timeouts);
     if (likely(status == ARES_SUCCESS)) {
       struct ares_addrinfo_cname *cname = result->cnames;
       struct ares_addrinfo_node   *node = result->nodes;
       if (cname) {
-        argv[0] = mrb_ary_new_capa(mrb, 1);
+        argv[1] = mrb_ary_new_capa(mrb, 1);
         do {
-          mrb_ary_push(mrb, argv[0], mrb_str_new_cstr(mrb, cname->name));
+          mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
         } while ((cname = cname->next));
       }
       if (node) {
-        argv[1] = mrb_ary_new_capa(mrb, 1);
+        argv[2] = mrb_ary_new_capa(mrb, 1);
         do {
-          mrb_ary_push(mrb, argv[1], mrb_cares_get_ai(mrb_cares_addrinfo, node));
+          mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb_cares_args, node));
         } while ((node = node->ai_next));
       }
     } else {
-      argv[2] = mrb_cares_response_error(mrb, status);
+      argv[3] = mrb_cares_response_error(mrb, status);
     }
-    mrb_yield_argv(mrb, mrb_cares_addrinfo->block, NELEMS(argv), argv);
+    mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
 
     mrb->jmp = prev_jmp;
   }
@@ -56,8 +57,47 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
   }
   MRB_END_EXC(&c_jmp);
 
-  mrb_iv_remove(mrb, mrb_cares_addrinfo->mrb_cares_ctx->cares, mrb_cares_addrinfo->obj_id);
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
   ares_freeaddrinfo(result);
+}
+
+static void
+mrb_ares_nameinfo_callback(void *arg, int status, int timeouts, char *node, char *service)
+{
+  struct mrb_cares_args *mrb_cares_args = (struct mrb_cares_args *) arg;
+  if (ARES_EDESTRUCTION == status || ARES_ECANCELLED == status)
+    return;
+
+  mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
+  struct mrb_jmpbuf* prev_jmp = mrb->jmp;
+  struct mrb_jmpbuf c_jmp;
+
+  MRB_TRY(&c_jmp)
+  {
+    mrb->jmp = &c_jmp;
+    mrb_value argv[4] = {mrb_nil_value()};
+    argv[0] = mrb_fixnum_value(timeouts);
+    if (likely(status == ARES_SUCCESS)) {
+      if (node) {
+        argv[1] = mrb_str_new_cstr(mrb, node);
+      }
+      if (service) {
+        argv[2] = mrb_str_new_cstr(mrb, service);
+      }
+    } else {
+      argv[3] = mrb_cares_response_error(mrb, status);
+    }
+    mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+
+    mrb->jmp = prev_jmp;
+  }
+  MRB_CATCH(&c_jmp)
+  {
+    mrb->jmp = prev_jmp;
+  }
+  MRB_END_EXC(&c_jmp);
+
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
 }
 
 static void
@@ -107,7 +147,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   mrb_data_init(self, mrb_cares_ctx, &mrb_cares_ctx_type);
   mrb_cares_ctx->mrb = mrb;
   mrb_cares_ctx->addrinfo_class = mrb_class_get(mrb, "Addrinfo");
-  mrb_cares_ctx->cares_addrinfo_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "_Addrinfo");
+  mrb_cares_ctx->cares_args_class = mrb_class_get_under(mrb, mrb_obj_class(mrb, self), "_Args");
   mrb_cares_ctx->cares = self;
   mrb_cares_ctx->block = block;
   mrb_cares_ctx->channel = NULL;
@@ -125,23 +165,23 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
-mrb_cares_make_addrinfo_struct(mrb_state *mrb,
+mrb_cares_make_args_struct(mrb_state *mrb,
 mrb_value self, struct mrb_cares_ctx *mrb_cares_ctx,
 mrb_value block,
-struct mrb_cares_addrinfo **mrb_cares_addrinfo)
+struct mrb_cares_args **mrb_cares_args)
 {
-  struct RData *addrinfo_data;
+  struct RData *args_data;
   Data_Make_Struct(mrb,
-  mrb_cares_ctx->cares_addrinfo_class, struct mrb_cares_addrinfo,
-  &mrb_cares_addrinfo_type, *mrb_cares_addrinfo, addrinfo_data);
-  (*mrb_cares_addrinfo)->mrb_cares_ctx = mrb_cares_ctx;
-  (*mrb_cares_addrinfo)->block = block;
-  mrb_value addrinfo = mrb_obj_value(addrinfo_data);
-  (*mrb_cares_addrinfo)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(addrinfo)), 36));
-  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "cares"), self);
-  mrb_iv_set(mrb, addrinfo, mrb_intern_lit(mrb, "block"), block);
+  mrb_cares_ctx->cares_args_class, struct mrb_cares_args,
+  &mrb_cares_args_type, *mrb_cares_args, args_data);
+  (*mrb_cares_args)->mrb_cares_ctx = mrb_cares_ctx;
+  (*mrb_cares_args)->block = block;
+  mrb_value args = mrb_obj_value(args_data);
+  (*mrb_cares_args)->obj_id = mrb_intern_str(mrb, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_obj_id(args)), 36));
+  mrb_iv_set(mrb, args, mrb_intern_lit(mrb, "cares"), self);
+  mrb_iv_set(mrb, args, mrb_intern_lit(mrb, "block"), block);
 
-  return addrinfo;
+  return args;
 }
 
 static mrb_value
@@ -182,15 +222,54 @@ mrb_ares_getaddrinfo(mrb_state *mrb, mrb_value self)
     .ai_protocol = (int) protocol
   };
 
-  struct mrb_cares_addrinfo *mrb_cares_addrinfo;
-  mrb_value addrinfo = mrb_cares_make_addrinfo_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_addrinfo);
+  struct mrb_cares_args *mrb_cares_args;
+  mrb_value addrinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
 
   ares_getaddrinfo(mrb_cares_ctx->channel,
     name, service,
     &hints,
-    mrb_ares_getaddrinfo_callback, mrb_cares_addrinfo);
+    mrb_ares_getaddrinfo_callback, mrb_cares_args);
 
-  mrb_iv_set(mrb, self, mrb_cares_addrinfo->obj_id, addrinfo); 
+  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, addrinfo); 
+
+  return self;
+}
+
+static mrb_value
+mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  mrb_int af;
+  const char *ip_address;
+  mrb_int flags = 0;
+  mrb_value block = mrb_nil_value();
+  mrb_get_args(mrb, "iz|i&", &af, &ip_address, &flags, &block);
+
+  if (unlikely(mrb_nil_p(block))) {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "no block given");
+  }
+  if (unlikely(MRB_TT_PROC != mrb_type(block))) {
+    mrb_raise(mrb, E_TYPE_ERROR, "not a block");
+  }
+
+  struct mrb_cares_args *mrb_cares_args;
+  mrb_value addrinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
+
+  struct sockaddr_storage ss = {0};
+  if (af == AF_INET) {
+    struct sockaddr_in *sa_in = (struct sockaddr_in *) &ss;
+    inet_pton(af, ip_address, &(sa_in->sin_addr));
+    ss.ss_family = af;
+  } else {
+    mrb_raise(mrb, E_NOTIMP_ERROR, "not implemented");
+  }
+
+  ares_getnameinfo(mrb_cares_ctx->channel,
+    (const struct sockaddr *) &ss, sizeof(ss),
+    flags,
+    mrb_ares_nameinfo_callback, mrb_cares_args);
+
+  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, addrinfo); 
 
   return self;
 }
@@ -553,13 +632,14 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   if (unlikely(rc != 0))
     mrb_cares_usage_error(mrb, "ares_library_init", rc);
 
-  struct RClass *mrb_ares_class, *mrb_ares_options_class, *mrb_ares_error_class, *mrb_ares_addrinfo_class;
+  struct RClass *mrb_ares_class, *mrb_ares_options_class, *mrb_ares_error_class, *mrb_ares_args_class;
 
   mrb_ares_class = mrb_define_class(mrb, "Ares", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_class, MRB_TT_CDATA);
   mrb_define_const (mrb, mrb_ares_class, "VERSION",           mrb_str_new_lit_frozen(mrb, ARES_VERSION_STR));
   mrb_define_method(mrb, mrb_ares_class, "initialize",        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "getaddrinfo",       mrb_ares_getaddrinfo,           MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
+  mrb_define_method(mrb, mrb_ares_class, "getnameinfo",       mrb_ares_getnameinfo,           MRB_ARGS_ARG(1, 1)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "timeout",           mrb_ares_timeout,               MRB_ARGS_OPT(1));
   mrb_define_method(mrb, mrb_ares_class, "process_fd",        mrb_ares_process_fd,            MRB_ARGS_REQ(2));
   mrb_define_method(mrb, mrb_ares_class, "servers_ports_csv=",mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));
@@ -623,8 +703,8 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl=", mrb_ares_options_qcache_max_ttl_set,  MRB_ARGS_REQ(1));
 #endif
   mrb_obj_freeze(mrb, available_options);
-  mrb_ares_addrinfo_class = mrb_define_class_under(mrb, mrb_ares_class, "_Addrinfo", mrb->object_class);
-  MRB_SET_INSTANCE_TT(mrb_ares_addrinfo_class, MRB_TT_CDATA);
+  mrb_ares_args_class = mrb_define_class_under(mrb, mrb_ares_class, "_Args", mrb->object_class);
+  MRB_SET_INSTANCE_TT(mrb_ares_args_class, MRB_TT_CDATA);
   mrb_ares_error_class = mrb_define_class_under(mrb, mrb_ares_class, "Error", E_RUNTIME_ERROR);
   
 #define mrb_cares_define_const(ARES_CONST_NAME, ARES_CONST) \
