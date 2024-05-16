@@ -69,8 +69,8 @@ struct mrb_cares_ctx {
 struct mrb_cares_args {
   struct mrb_cares_ctx *mrb_cares_ctx;
   mrb_value block;
-  sa_family_t family;
   mrb_sym obj_id;
+  ares_dns_rec_type_t type;
 };
 
 struct mrb_cares_options {

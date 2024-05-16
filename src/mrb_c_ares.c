@@ -29,13 +29,13 @@ mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int w
 }
 
 static mrb_value
-mrb_cares_get_ai(struct mrb_cares_args *mrb_cares_args, struct ares_addrinfo_node *node)
+mrb_cares_get_ai(mrb_state *mrb, struct mrb_cares_args *mrb_cares_args, struct ares_addrinfo_node *node)
 {
   mrb_value argv[] = {
     mrb_str_new(mrb_cares_args->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen),
-    mrb_fixnum_value(node->ai_family),
-    mrb_fixnum_value(node->ai_socktype),
-    mrb_fixnum_value(node->ai_protocol)
+    mrb_int_value(mrb, node->ai_family),
+    mrb_int_value(mrb, node->ai_socktype),
+    mrb_int_value(mrb, node->ai_protocol)
   };
 
   return mrb_obj_new(mrb_cares_args->mrb_cares_ctx->mrb, mrb_cares_args->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
@@ -56,20 +56,20 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
   {
     mrb->jmp = &c_jmp;
     mrb_value argv[4] = {mrb_nil_value()};
-    argv[0] = mrb_fixnum_value(timeouts);
+    argv[0] = mrb_int_value(mrb, timeouts);
     if (likely(ARES_SUCCESS == status)) {
       struct ares_addrinfo_cname *cname = result->cnames;
-      struct ares_addrinfo_node   *node = result->nodes;
       if (cname) {
         argv[1] = mrb_ary_new_capa(mrb, 1);
         do {
           mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
         } while ((cname = cname->next));
       }
+      struct ares_addrinfo_node *node = result->nodes;
       if (node) {
         argv[2] = mrb_ary_new_capa(mrb, 1);
         do {
-          mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb_cares_args, node));
+          mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb, mrb_cares_args, node));
         } while ((node = node->ai_next));
       }
     } else {
@@ -104,7 +104,7 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
   {
     mrb->jmp = &c_jmp;
     mrb_value argv[4] = {mrb_nil_value()};
-    argv[0] = mrb_fixnum_value(timeouts);
+    argv[0] = mrb_int_value(mrb, timeouts);
     if (likely(ARES_SUCCESS == status)) {
       if (node) {
         argv[1] = mrb_str_new_cstr(mrb, node);
@@ -124,6 +124,119 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
     mrb->jmp = prev_jmp;
   }
   MRB_END_EXC(&c_jmp);
+
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+}
+
+static void
+mrb_cares_parse_hostent(mrb_state *mrb, mrb_value argv[3], struct hostent *host)
+{
+  argv[1] = mrb_hash_new_capa(mrb, 3);
+  mrb_hash_set(mrb, argv[1], mrb_symbol_value(mrb_intern_lit(mrb, "name")), mrb_str_new_cstr(mrb, host->h_name));
+  char **aliases = host->h_aliases;
+  mrb_value aliases_ary = mrb_ary_new(mrb);
+  while (*aliases) {
+    mrb_ary_push(mrb, aliases_ary, mrb_str_new_cstr(mrb, *aliases));
+    aliases++;
+  }
+  mrb_hash_set(mrb, argv[1], mrb_symbol_value(mrb_intern_lit(mrb, "aliases")), aliases_ary);
+  char **addrs = host->h_addr_list;
+  char addr[INET6_ADDRSTRLEN];
+  mrb_value addrs_ary = mrb_ary_new(mrb);
+  while (*addrs) {
+    ares_inet_ntop(host->h_addrtype, *addrs, addr, sizeof(addr));
+    mrb_ary_push(mrb, addrs_ary, mrb_str_new_cstr(mrb, addr));
+    addrs++;
+  }
+  mrb_hash_set(mrb, argv[1], mrb_symbol_value(mrb_intern_lit(mrb, "addr_list")), addrs_ary);
+}
+
+static void
+mrb_ares_parse_ns_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+{
+  struct hostent *host = NULL;
+  int status = ares_parse_ns_reply(abuf, alen, &host);
+  if (ARES_SUCCESS == status) {
+    mrb_cares_parse_hostent(mrb, argv, host);
+  } else {
+    argv[2] = mrb_cares_response_error(mrb, status);
+  }
+  ares_free_hostent(host);
+}
+
+static void
+mrb_ares_parse_mx_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+{
+  struct ares_mx_reply* reply = NULL;
+  int status = ares_parse_mx_reply(abuf, alen, &reply);
+  if (ARES_SUCCESS == status) {
+    argv[1] = mrb_ary_new_capa(mrb, 1);
+    struct ares_mx_reply* reply_i = reply;
+    while (reply_i) {
+      mrb_value r = mrb_hash_new_capa(mrb, 2);
+      mrb_hash_set(mrb, r, mrb_symbol_value(mrb_intern_lit(mrb, "host")), mrb_str_new_cstr(mrb, reply_i->host));
+      mrb_hash_set(mrb, r, mrb_symbol_value(mrb_intern_lit(mrb, "priority")), mrb_fixnum_value(reply_i->priority));
+      mrb_ary_push(mrb, argv[1], r);
+      reply_i = reply_i->next;
+    }
+  } else {
+    argv[2] = mrb_cares_response_error(mrb, status);
+  }
+  ares_free_data(reply);
+}
+
+static void
+mrb_ares_parse_srv_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+{
+  struct ares_srv_reply* reply = NULL;
+  int status = ares_parse_srv_reply(abuf, alen, &reply);
+  if (ARES_SUCCESS == status) {
+    argv[1] = mrb_ary_new_capa(mrb, 1);
+    struct ares_srv_reply * reply_i = reply;
+    while (reply_i) {
+      mrb_value pwph = mrb_hash_new_capa(mrb, 4);
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "priority")), mrb_fixnum_value(reply_i->priority));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "weight")), mrb_fixnum_value(reply_i->weight));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "port")), mrb_fixnum_value(reply_i->port));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "host")), mrb_str_new_cstr(mrb, reply_i->host));
+      mrb_ary_push(mrb, argv[1], pwph);
+      reply_i = reply_i->next;
+    }
+  } else {
+    argv[2] = mrb_cares_response_error(mrb, status);
+  }
+  ares_free_data(reply);  
+}
+
+static void
+mrb_ares_search_callback(void *arg, int status, int timeouts, unsigned char *abuf, int alen)
+{
+  struct mrb_cares_args *mrb_cares_args = (struct mrb_cares_args *) arg;
+  if (ARES_EDESTRUCTION == status)
+    return;
+
+  mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
+  mrb_value argv[3] = {mrb_nil_value()};
+  argv[0] = mrb_int_value(mrb, timeouts);
+  if (likely(ARES_SUCCESS == status)) {
+    switch(mrb_cares_args->type) {
+      case ARES_REC_TYPE_NS: {
+        mrb_ares_parse_ns_reply(mrb, argv, abuf, alen);
+      } break;
+      case ARES_REC_TYPE_MX: {
+        mrb_ares_parse_mx_reply(mrb, argv, abuf, alen);
+      } break;
+      case ARES_REC_TYPE_SRV: {
+        mrb_ares_parse_srv_reply(mrb, argv, abuf, alen);
+      } break;
+      default: {
+        argv[2] = mrb_exc_new_str(mrb, E_NOTIMP_ERROR, mrb_integer_to_str(mrb, mrb_int_value(mrb, mrb_cares_args->type), 10));
+      }
+    }
+  } else {
+    argv[2] = mrb_cares_response_error(mrb, status);
+  }
+  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
 
   mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
 }
@@ -296,6 +409,29 @@ mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
 }
 
 static mrb_value
+mrb_ares_search(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
+  const char *name;
+  mrb_sym type_sym;
+  mrb_value block = mrb_nil_value();
+  mrb_get_args(mrb, "zn&", &name, &type_sym, &block);
+  mrb_int type = mrb_integer(mrb_hash_get(mrb, mrb_const_get(mrb, mrb_obj_value(mrb_obj_class(mrb, self)), mrb_intern_lit(mrb, "RecType")), mrb_symbol_value(type_sym)));
+  if (type) {
+    struct mrb_cares_args *mrb_cares_args;
+    mrb_value search = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
+    mrb_cares_args->type = type;
+
+    ares_search(mrb_cares_ctx->channel, name, ARES_CLASS_IN, (int) type, mrb_ares_search_callback, mrb_cares_args);
+    mrb_iv_set(mrb, self, mrb_cares_args->obj_id, search); 
+  } else {
+    mrb_raise(mrb, E_ARGUMENT_ERROR, "wrong type");
+  }
+
+  return self;
+}
+
+static mrb_value
 mrb_ares_timeout(mrb_state *mrb, mrb_value self)
 {
   struct mrb_cares_ctx *mrb_cares_ctx = DATA_PTR(self);
@@ -393,7 +529,7 @@ mrb_ares_options_new(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_flags_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.flags);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.flags);
 }
 
 static mrb_value
@@ -416,7 +552,7 @@ mrb_ares_options_flags_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_timeout_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.timeout);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.timeout);
 }
 
 static mrb_value
@@ -439,7 +575,7 @@ mrb_ares_options_timeout_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_tries_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.tries);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.tries);
 }
 
 static mrb_value
@@ -462,7 +598,7 @@ mrb_ares_options_tries_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_ndots_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.ndots);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.ndots);
 }
 
 static mrb_value
@@ -511,7 +647,7 @@ mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_ednspsz_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.ednspsz);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.ednspsz);
 }
 
 static mrb_value
@@ -574,7 +710,7 @@ mrb_ares_options_hosts_path_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_udp_max_queries_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.udp_max_queries);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.udp_max_queries);
 }
 
 static mrb_value
@@ -597,7 +733,7 @@ mrb_ares_options_udp_max_queries_set(mrb_state *mrb, mrb_value self)
 static mrb_value
 mrb_ares_options_maxtimeout_get(mrb_state *mrb, mrb_value self)
 {
-  return mrb_fixnum_value(((struct mrb_cares_options *)DATA_PTR(self))->options.maxtimeout);
+  return mrb_int_value(mrb, ((struct mrb_cares_options *)DATA_PTR(self))->options.maxtimeout);
 }
 
 static mrb_value
@@ -661,6 +797,7 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, mrb_ares_class, "initialize",        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "getaddrinfo",       mrb_ares_getaddrinfo,           MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "getnameinfo",       mrb_ares_getnameinfo,           MRB_ARGS_ARG(1, 1)|MRB_ARGS_BLOCK());
+  mrb_define_method(mrb, mrb_ares_class, "search",            mrb_ares_search,                MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
   mrb_define_method(mrb, mrb_ares_class, "timeout",           mrb_ares_timeout,               MRB_ARGS_OPT(1));
   mrb_define_method(mrb, mrb_ares_class, "process_fd",        mrb_ares_process_fd,            MRB_ARGS_REQ(2));
   mrb_define_method(mrb, mrb_ares_class, "servers_ports_csv=",mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));
@@ -723,7 +860,6 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl",  mrb_ares_options_qcache_max_ttl_get,  MRB_ARGS_NONE());
   mrb_define_method(mrb, mrb_ares_options_class, "qcache_max_ttl=", mrb_ares_options_qcache_max_ttl_set,  MRB_ARGS_REQ(1));
 #endif
-  mrb_obj_freeze(mrb, available_options);
   mrb_ares_args_class = mrb_define_class_under(mrb, mrb_ares_class, "_Args", mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_args_class, MRB_TT_CDATA);
   mrb_ares_error_class = mrb_define_class_under(mrb, mrb_ares_class, "Error", E_RUNTIME_ERROR);
@@ -736,13 +872,31 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
 
   mrb_value errno_to_class = mrb_hash_new(mrb);
   mrb_define_const(mrb, mrb_ares_class, "_Errno2Class", errno_to_class);
-#define mrb_cares_define_error(ARES_ENUM_NAME, ARES_ENUM) \
+#define mrb_cares_define_ares_status(ARES_ENUM_NAME, ARES_ENUM) \
   do { \
     struct RClass *enum_err_class = mrb_define_class_under(mrb, mrb_ares_class, ARES_ENUM_NAME, mrb_ares_error_class); \
     mrb_hash_set(mrb, errno_to_class, mrb_int_value(mrb, ARES_ENUM), mrb_obj_value(enum_err_class)); \
   } while(0)
 
+  mrb_value rec_type = mrb_hash_new(mrb);
+  mrb_define_const(mrb, mrb_ares_class, "RecType", rec_type);
+#define mrb_cares_define_ares_dns_rec_type(ARES_ENUM_NAME, ARES_ENUM) \
+  do { \
+    mrb_hash_set(mrb, rec_type, mrb_symbol_value(mrb_intern_cstr(mrb, ARES_ENUM_NAME)), mrb_int_value(mrb, ARES_ENUM)); \
+  } while(0)
+
+  mrb_value ares_dns_class = mrb_hash_new(mrb);
+  mrb_define_const(mrb, mrb_ares_class, "DnsClass", ares_dns_class);
+#define mrb_cares_define_ares_dns_class(ARES_ENUM_NAME, ARES_ENUM) \
+  do { \
+    mrb_hash_set(mrb, ares_dns_class, mrb_symbol_value(mrb_intern_cstr(mrb, ARES_ENUM_NAME)), mrb_int_value(mrb, ARES_ENUM)); \
+  } while(0)
+
 #include "cares_enums.cstub"
+  mrb_obj_freeze(mrb, available_options);
+  mrb_obj_freeze(mrb, errno_to_class);
+  mrb_obj_freeze(mrb, rec_type);
+  mrb_obj_freeze(mrb, ares_dns_class);
 }
 
 void

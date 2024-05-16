@@ -9,6 +9,7 @@ ares = Ares.new do |socket, readable, writable|
     end
   else
     uring.prep_cancel(pollers[socket])
+    pollers.delete(socket)
   end
 end
 
@@ -36,6 +37,11 @@ end
 ares.getnameinfo(Socket::AF_INET, "185.199.111.153", 443) do |timeouts, name, service, error|
   puts "ruby-lang-reverse"
   puts "name: #{name} service: #{service}"
+end
+
+ares.search("github.com", :MX) do |timeouts, hostent, error|
+  puts "MX"
+  puts hostent.inspect
 end
 
 while ((timeout = ares.timeout) > 0.0)

@@ -18,9 +18,9 @@ create a build_config.rb file and add gem mgem: 'mruby-c-ares' to it
 Usage examples
 ==============
 
-Currently only getaddrinfo is implemented, if you need more let me know!
+Currently only getaddrinfo and getnameinfo are implemented, if you need more let me know!
 
-requires 'mruby-poll' IO.select will be implemented later.
+requires 'mruby-poll'
 ```ruby
 poll = Poll.new
 ares = Ares.new do |socket, readable, writable|
@@ -48,6 +48,11 @@ ares.getaddrinfo("localhost", "ircd") do |timeouts, cname, ai, error|
   puts ai.inspect
 end
 
+ares.getnameinfo(Socket::AF_INET, "185.199.111.153", 443) do |timeouts, name, service, error|
+  puts "ruby-lang-reverse"
+  puts "name: #{name} service: #{service}"
+end
+
 while ((timeout = ares.timeout) > 0.0)
   poll.wait(timeout * 1000) do |fd|
     ares.process_fd((fd.readable?) ? fd.socket : -1, (fd.writable?) ? fd.socket : -1)
@@ -62,6 +67,9 @@ socket.readable? and socket.writable? return false at the same time when you don
 ares.getaddrinfo takes up to 6 arguments, the name to lookup, the service, flags, the address family, the socktype, and the protocol.
 Take a look at https://c-ares.org/ares_getaddrinfo.html for more informations.
 
+ares.getnameinfo takes up to 4 arguments, the address family (Socket::AF_INET or AF_INET6), the IP Address to reverse lookup, the port to reverse look up and a flags argument, usable flags start with Ares::NI_ and must be combined bitwise if you want more than one.
+flags to set name and service lookup are automatically set when you fill out either of them.
+You only have to pass the Address and one of ip address and port, not both.
 
 ares.timeout returns how long the current operations timeout is, once the current operations have completed 0.0 is returned.
 
@@ -76,6 +84,8 @@ Take a look at https://c-ares.org/ares_set_servers_ports_csv.html for more infor
 
 ares.local_ip4= excepts a dotted IPv4 Address. ares.local_ip6= excepts a IPv6 Address.
 It sets the local Address from which requests are made.
+
+API docs might follow later, if you know C and mRuby and know a good software to generate docs let me know.
 
 Error Handling
 ==============
