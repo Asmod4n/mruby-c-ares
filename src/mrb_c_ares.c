@@ -152,7 +152,7 @@ mrb_cares_parse_hostent(mrb_state *mrb, mrb_value argv[3], struct hostent *host)
 }
 
 static void
-mrb_ares_parse_ns_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+mrb_ares_parse_ns_reply(mrb_state *mrb, mrb_value argv[3], const unsigned char *abuf, int alen)
 {
   struct hostent *host = NULL;
   int status = ares_parse_ns_reply(abuf, alen, &host);
@@ -165,7 +165,7 @@ mrb_ares_parse_ns_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, 
 }
 
 static void
-mrb_ares_parse_mx_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+mrb_ares_parse_mx_reply(mrb_state *mrb, mrb_value argv[3], const unsigned char *abuf, int alen)
 {
   struct ares_mx_reply* reply = NULL;
   int status = ares_parse_mx_reply(abuf, alen, &reply);
@@ -186,7 +186,7 @@ mrb_ares_parse_mx_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, 
 }
 
 static void
-mrb_ares_parse_srv_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf, int alen)
+mrb_ares_parse_srv_reply(mrb_state *mrb, mrb_value argv[3], const unsigned char *abuf, int alen)
 {
   struct ares_srv_reply* reply = NULL;
   int status = ares_parse_srv_reply(abuf, alen, &reply);
@@ -195,10 +195,10 @@ mrb_ares_parse_srv_reply(mrb_state *mrb, mrb_value argv[3], unsigned char *abuf,
     struct ares_srv_reply * reply_i = reply;
     while (reply_i) {
       mrb_value pwph = mrb_hash_new_capa(mrb, 4);
-      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "priority")), mrb_fixnum_value(reply_i->priority));
-      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "weight")), mrb_fixnum_value(reply_i->weight));
-      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "port")), mrb_fixnum_value(reply_i->port));
-      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "host")), mrb_str_new_cstr(mrb, reply_i->host));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "priority")),  mrb_fixnum_value(reply_i->priority));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "weight")),    mrb_fixnum_value(reply_i->weight));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "port")),      mrb_fixnum_value(reply_i->port));
+      mrb_hash_set(mrb, pwph, mrb_symbol_value(mrb_intern_lit(mrb, "host")),      mrb_str_new_cstr(mrb, reply_i->host));
       mrb_ary_push(mrb, argv[1], pwph);
       reply_i = reply_i->next;
     }
@@ -396,14 +396,14 @@ mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
   }
 
   struct mrb_cares_args *mrb_cares_args;
-  mrb_value addrinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
+  mrb_value nameinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
 
   ares_getnameinfo(mrb_cares_ctx->channel,
     (const struct sockaddr *) &ss, salen,
     flags,
     mrb_ares_getnameinfo_callback, mrb_cares_args);
 
-  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, addrinfo); 
+  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, nameinfo); 
 
   return self;
 }
@@ -626,7 +626,7 @@ mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
   mrb_value *argv;
   mrb_int argc;
   mrb_get_args(mrb, "*", &argv, &argc);
-  mrb_cares_options->options.domains = mrb_realloc(mrb, mrb_cares_options->options.domains, argc * sizeof(mrb_value));
+  mrb_cares_options->options.domains = mrb_realloc(mrb, mrb_cares_options->options.domains, argc * sizeof(char *));
   mrb_cares_options->options.ndomains = (int) argc;
 
   if (argc) {
@@ -636,6 +636,7 @@ mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
     mrb_iv_set(mrb, self, mrb_intern_lit(mrb, "@domains"), mrb_ary_new_from_values(mrb, argc, argv));
     mrb_cares_options->optmask |= ARES_OPT_DOMAINS;
   } else {
+    mrb_free(mrb, mrb_cares_options->options.domains);
     mrb_cares_options->options.domains = NULL;
     mrb_iv_remove(mrb, self, mrb_intern_lit(mrb, "@domains"));
     mrb_cares_options->optmask &= ~ARES_OPT_DOMAINS;
@@ -868,7 +869,7 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
   do { \
     mrb_define_const(mrb, mrb_ares_class, ARES_CONST_NAME, mrb_int_value(mrb, ARES_CONST)); \
   } while(0)
-#include "cares_const.cstub"
+#include CARES_CONST_CSTUB
 
   mrb_value errno_to_class = mrb_hash_new(mrb);
   mrb_define_const(mrb, mrb_ares_class, "_Errno2Class", errno_to_class);
@@ -892,7 +893,7 @@ mrb_mruby_c_ares_gem_init(mrb_state* mrb)
     mrb_hash_set(mrb, ares_dns_class, mrb_symbol_value(mrb_intern_cstr(mrb, ARES_ENUM_NAME)), mrb_int_value(mrb, ARES_ENUM)); \
   } while(0)
 
-#include "cares_enums.cstub"
+#include CARES_ENUMS_CSTUB
   mrb_obj_freeze(mrb, available_options);
   mrb_obj_freeze(mrb, errno_to_class);
   mrb_obj_freeze(mrb, rec_type);
