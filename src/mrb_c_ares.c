@@ -32,13 +32,13 @@ static mrb_value
 mrb_cares_get_ai(mrb_state *mrb, struct mrb_cares_args *mrb_cares_args, struct ares_addrinfo_node *node)
 {
   mrb_value argv[] = {
-    mrb_str_new(mrb_cares_args->mrb_cares_ctx->mrb, (const char *) node->ai_addr, node->ai_addrlen),
+    mrb_str_new(mrb, (const char *) node->ai_addr, node->ai_addrlen),
     mrb_int_value(mrb, node->ai_family),
     mrb_int_value(mrb, node->ai_socktype),
     mrb_int_value(mrb, node->ai_protocol)
   };
 
-  return mrb_obj_new(mrb_cares_args->mrb_cares_ctx->mrb, mrb_cares_args->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
+  return mrb_obj_new(mrb, mrb_cares_args->mrb_cares_ctx->addrinfo_class, NELEMS(argv), argv);
 }
 
 static void 
@@ -439,7 +439,7 @@ mrb_ares_timeout(mrb_state *mrb, mrb_value self)
   mrb_get_args(mrb, "|f", &tmt); 
   struct timeval tv = {0};
   if (tmt > 0.0) {
-    tmt += 0.5e-9; // we are adding this so maxtv can't become negative.
+    tmt += 0.5e-7; // we are adding this so maxtv can't become negative.
     struct timeval maxtv = {
       .tv_sec = tmt,
       .tv_usec = (tmt - (mrb_int)(tmt)) * USEC_PER_SEC

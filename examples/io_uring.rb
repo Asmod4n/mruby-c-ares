@@ -40,7 +40,7 @@ ares.getnameinfo(Socket::AF_INET, "185.199.111.153", 443) do |timeouts, name, se
 end
 
 ares.search("github.com", :MX) do |timeouts, hostent, error|
-  puts "MX"
+  puts "github MX"
   puts hostent.inspect
 end
 
