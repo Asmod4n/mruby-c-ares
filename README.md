@@ -66,7 +66,7 @@ end
 ```
 
 Lets go through it.
-Ares.new creates a new Arex context, you have to supply a function which polls on its supplied Sockets.
+Ares.new creates a new Ares context, you have to supply a function which polls on its supplied Sockets.
 readable and writable return false at the same time when you don't have to poll on the socket anymore.
 
 ares.getaddrinfo takes up to 6 arguments, the name to lookup, the service, flags, the address family, the socktype, and the protocol.

@@ -3,8 +3,8 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
     raise "mruby-c-ares: can't find c-ares libraries or development headers, please install them."
   end
   def const_gen(spec)
-
-    d = File.open("#{spec.build_dir}/src/cares_const.cstub", "w")
+    FileUtils.mkdir_p("#{spec.build_dir}/src/")
+    d = File.open("#{spec.build_dir}/src/cares_const.cstub", "w+")
     spec.cc.defines << "CARES_CONST_CSTUB=\\\"#{d.path}\\\""
 
     define_match = /^[ \t]*#define ARES_(\S+)[ \t]*((?:.*\\\r?\n)*.*)/m

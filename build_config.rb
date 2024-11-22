@@ -2,6 +2,7 @@ MRuby::Build.new do |conf|
     toolchain :gcc
     enable_debug
     conf.enable_sanitizer "address,undefined,leak"
+    conf.linker.flags_before_libraries << "-static-libasan"
     conf.cc.flags << '-fno-omit-frame-pointer' << '-g' << '-ggdb' << '-Og'
     #conf.cc.flags << '-Os' << '-march=native'
     conf.enable_debug

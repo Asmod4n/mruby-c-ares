@@ -2,8 +2,8 @@ uring = IO::Uring.new
 pollers =  {}
 ares = Ares.new do |socket, readable, writable|
   if (readable || writable)
-    if userdata = pollers[socket]
-      pollers[socket] = userdata.update((readable ? IO::Uring::POLLIN : 0)|(writable ? IO::Uring::POLLOUT : 0), IO::Uring::POLL_UPDATE_EVENTS)
+    if operation = pollers[socket]
+      pollers[socket] = uring.prep_poll_update(operation, (readable ? IO::Uring::POLLIN : 0)|(writable ? IO::Uring::POLLOUT : 0), IO::Uring::POLL_UPDATE_EVENTS)
     else
       pollers[socket] = uring.prep_poll_multishot(socket, (readable ? IO::Uring::POLLIN : 0)|(writable ? IO::Uring::POLLOUT : 0))
     end
@@ -45,10 +45,10 @@ ares.search("github.com", :MX) do |timeouts, hostent, error|
 end
 
 while ((timeout = ares.timeout) > 0.0)
-  uring.wait(timeout) do |userdata|
-    raise userdata.errno if userdata.errno
-    if userdata.type != :cancel
-      ares.process_fd((userdata.readable?) ? userdata.socket : -1, (userdata.writable?) ? userdata.socket : -1)
+  uring.wait(timeout) do |operation|
+    raise operation.errno if operation.errno
+    if operation.type != :cancel
+      ares.process_fd((operation.readable?) ? operation.sock : -1, (operation.writable?) ? operation.sock : -1)
     end
   end
 end
