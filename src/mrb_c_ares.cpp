@@ -1,4 +1,3 @@
-#include "mruby/common.h"
 #define _DEFAULT_SOURCE
 #include <mruby.h>
 #include <stdio.h>
@@ -136,7 +135,6 @@ mrb_cares_response_error(mrb_state *mrb, int status)
   }
 }
 
-
 static void
 mrb_ares_state_callback(void *data, ares_socket_t socket_fd, int readable, int writable)
 {
@@ -198,7 +196,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
   } catch(...) {
     ares_freeaddrinfo(result);
     mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
-    mrb_exc_raise(mrb, mrb_obj_value(mrb->exc));
+    throw;
   }
 
   ares_freeaddrinfo(result);
@@ -225,9 +223,9 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
   } else {
     argv[3] = mrb_cares_response_error(mrb, status);
   }
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
   mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
 
-  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
 }
 
 static void
@@ -338,9 +336,8 @@ mrb_ares_search_callback(void *arg, int status, int timeouts, unsigned char *abu
   } else {
     argv[2] = mrb_cares_response_error(mrb, status);
   }
-  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
-
   mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
 }
 
 static mrb_value

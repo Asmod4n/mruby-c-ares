@@ -27,9 +27,8 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
     spec.linker.flags_before_libraries << "#{spec.build_dir}/build/lib64/libcares.a"
   end
 
-  spec.cc.include_paths << "#{spec.build_dir}/build/include"
-  spec.cc.defines << "CARES_STATICLIB"
-  spec.add_dependency 'mruby-c-ext-helpers'
+  spec.cxx.include_paths << "#{spec.build_dir}/build/include"
+  spec.cxx.defines << "CARES_STATICLIB"
   spec.add_dependency 'mruby-socket'
 
   spec.license = 'MIT'
