@@ -48,4 +48,15 @@ C
     end
   end
 
+  ares_dns_class_type = header_content.match(/typedef\s+enum\s*\{([^}]+)\}\s*ares_dns_class_t;/)
+  ares_dns_class_type[1].split(',').each do |value|
+    key, val = value.split(' = ')
+    if (key && val != "0")
+      key = key.gsub(/[^a-zA-Z0-9_]/, '')
+      d.write <<-C
+mrb_cares_define_ares_dns_class_type("#{key[11..-1]}", #{key});
+C
+    end
+  end
+
 end
