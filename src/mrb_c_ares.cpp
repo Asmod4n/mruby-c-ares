@@ -38,6 +38,7 @@
 #include <mruby/numeric.h>
 
 #include <mruby/presym.h>
+#include <functional>
 
 #include <ares.h>
 #if !((ARES_VERSION_MAJOR == 1 && ARES_VERSION_MINOR >= 16) || ARES_VERSION_MAJOR > 1)
@@ -74,7 +75,6 @@ struct mrb_cares_args {
   mrb_value block;
   mrb_int obj_id;
   ares_dns_rec_type_t type;
-  ares_dns_record_t  *dnsrec;
 };
 
 struct mrb_cares_options {
@@ -173,36 +173,38 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
     return;
 
   mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
-  try {
-    mrb_value argv[4] = {mrb_nil_value()};
-    argv[0] = mrb_int_value(mrb, timeouts);
-    if (likely(ARES_SUCCESS == status)) {
-      struct ares_addrinfo_cname *cname = result->cnames;
-      if (cname) {
-        argv[1] = mrb_ary_new_capa(mrb, 1);
-        do {
-          mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
-        } while ((cname = cname->next));
-      }
-      struct ares_addrinfo_node *node = result->nodes;
-      if (node) {
-        argv[2] = mrb_ary_new_capa(mrb, 1);
-        do {
-          mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb, mrb_cares_args, node));
-        } while ((node = node->ai_next));
-      }
-    } else {
-      argv[3] = mrb_cares_response_error(mrb, status);
-    }
-    mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
-  } catch(...) {
+
+  auto cleanup = [&] {
     ares_freeaddrinfo(result);
     mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
-    throw;
-  }
+  };
+  struct Guard {
+      std::function<void()> fn;
+      ~Guard() { fn(); }
+  } guard{cleanup};
 
-  ares_freeaddrinfo(result);
-  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+  mrb_value argv[4] = {mrb_nil_value()};
+  argv[0] = mrb_int_value(mrb, timeouts);
+  if (likely(ARES_SUCCESS == status)) {
+    struct ares_addrinfo_cname *cname = result->cnames;
+    if (cname) {
+      argv[1] = mrb_ary_new_capa(mrb, 1);
+      do {
+        mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
+      } while ((cname = cname->next));
+    }
+    struct ares_addrinfo_node *node = result->nodes;
+    if (node) {
+      argv[2] = mrb_ary_new_capa(mrb, 1);
+      do {
+        mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb, mrb_cares_args, node));
+      } while ((node = node->ai_next));
+    }
+  } else {
+    argv[3] = mrb_cares_response_error(mrb, status);
+  }
+  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+
 }
 
 static void
@@ -280,7 +282,6 @@ struct mrb_cares_args **mrb_cares_args)
   (*mrb_cares_args)->block = block;
   mrb_value args = mrb_obj_value(args_data);
   (*mrb_cares_args)->obj_id = mrb_obj_id(args);
-  (*mrb_cares_args)->dnsrec = NULL;
   mrb_iv_set(mrb, args, MRB_SYM(cares), self);
   mrb_iv_set(mrb, args, MRB_SYM(block), block);
 
