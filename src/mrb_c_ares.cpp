@@ -529,9 +529,63 @@ mrb_ares_parse_dnsrec_list(mrb_state *mrb, mrb_value argv[3],
         }
         break;
       }
-      default:
-        // extend here for NAPTR, SOA, OPT, TLSA, etc.
+
+      case ARES_REC_TYPE_NAPTR: {
+        unsigned short order = ares_dns_rr_get_u16(rr, ARES_RR_NAPTR_ORDER);
+        unsigned short pr    = ares_dns_rr_get_u16(rr, ARES_RR_NAPTR_PREFERENCE);
+        const char *flags    = ares_dns_rr_get_str(rr, ARES_RR_NAPTR_FLAGS);
+        const char *svc      = ares_dns_rr_get_str(rr, ARES_RR_NAPTR_SERVICES);
+        const char *regexp   = ares_dns_rr_get_str(rr, ARES_RR_NAPTR_REGEXP);
+        const char *repl     = ares_dns_rr_get_str(rr, ARES_RR_NAPTR_REPLACEMENT);
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(order)),    mrb_fixnum_value(order));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(priority)), mrb_fixnum_value(pr));
+        if(flags)  mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(flags)),  mrb_str_new_cstr(mrb, flags));
+        if(svc)    mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(services)), mrb_str_new_cstr(mrb, svc));
+        if(regexp) mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(regexp)), mrb_str_new_cstr(mrb, regexp));
+        if(repl)   mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(replacement)), mrb_str_new_cstr(mrb, repl));
         break;
+      }
+
+      case ARES_REC_TYPE_SOA: {
+        const char *mname  = ares_dns_rr_get_str(rr, ARES_RR_SOA_MNAME);
+        const char *rname  = ares_dns_rr_get_str(rr, ARES_RR_SOA_RNAME);
+        unsigned int serial = ares_dns_rr_get_u32(rr, ARES_RR_SOA_SERIAL);
+        unsigned int refresh = ares_dns_rr_get_u32(rr, ARES_RR_SOA_REFRESH);
+        unsigned int retry   = ares_dns_rr_get_u32(rr, ARES_RR_SOA_RETRY);
+        unsigned int expire  = ares_dns_rr_get_u32(rr, ARES_RR_SOA_EXPIRE);
+        unsigned int minimum = ares_dns_rr_get_u32(rr, ARES_RR_SOA_MINIMUM);
+        if(mname)  mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(mname)), mrb_str_new_cstr(mrb, mname));
+        if(rname)  mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(rname)), mrb_str_new_cstr(mrb, rname));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(serial)),  mrb_fixnum_value(serial));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(refresh)), mrb_fixnum_value(refresh));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(retry)),   mrb_fixnum_value(retry));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(expire)),  mrb_fixnum_value(expire));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(minimum)), mrb_fixnum_value(minimum));
+        break;
+      }
+
+      case ARES_REC_TYPE_OPT: {
+        const char *data = ares_dns_rr_get_str(rr, ARES_RR_OPT_OPTIONS);
+        if(data) mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(data)), mrb_str_new_cstr(mrb, data));
+        break;
+      }
+
+      case ARES_REC_TYPE_TLSA: {
+        unsigned short usage    = ares_dns_rr_get_u16(rr, ARES_RR_TLSA_CERT_USAGE);
+        unsigned short selector = ares_dns_rr_get_u16(rr, ARES_RR_TLSA_SELECTOR);
+        unsigned short mtype    = ares_dns_rr_get_u16(rr, ARES_RR_TLSA_MATCH);
+        const char   *data      = ares_dns_rr_get_str(rr, ARES_RR_TLSA_DATA);
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(usage)),    mrb_fixnum_value(usage));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(selector)), mrb_fixnum_value(selector));
+        mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(mtype)),    mrb_fixnum_value(mtype));
+        if(data) mrb_hash_set(mrb, h, mrb_symbol_value(MRB_SYM(data)), mrb_str_new_cstr(mrb, data));
+        break;
+      }
+
+
+      default:
+    // unknown/unhandled types
+    break;
     }
 
     mrb_ary_push(mrb, ary, h);
