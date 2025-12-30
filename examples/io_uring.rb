@@ -3,9 +3,9 @@ pollers =  {}
 ares = Ares.new do |socket, readable, writable|
   if (readable || writable)
     if operation = pollers[socket]
-      pollers[socket] = uring.prep_poll_update(operation, (readable ? IO::Uring::POLLIN : 0)|(writable ? IO::Uring::POLLOUT : 0), IO::Uring::POLL_UPDATE_EVENTS)
+      pollers[socket] = uring.prep_poll_update(operation, (readable ? POLLIN : 0)|(writable ? POLLOUT : 0), POLL_UPDATE_EVENTS)
     else
-      pollers[socket] = uring.prep_poll_multishot(socket, (readable ? IO::Uring::POLLIN : 0)|(writable ? IO::Uring::POLLOUT : 0))
+      pollers[socket] = uring.prep_poll_multishot(socket, (readable ? POLLIN : 0)|(writable ? POLLOUT : 0))
     end
   else
     uring.prep_cancel(pollers[socket])
@@ -16,11 +16,6 @@ end
 ares.getaddrinfo("www.ruby-lang.org", 443) do |timeouts, cname, ai, error|
   puts "ruby-lang"
   puts cname.inspect
-  puts ai.inspect
-end
-
-ares.getaddrinfo("redirect.github.com", "https") do |timeouts, cname, ai, error|
-  puts "github"
   puts ai.inspect
 end
 
@@ -46,7 +41,7 @@ end
 
 while ((timeout = ares.timeout) > 0.0)
   uring.wait(timeout) do |operation|
-    raise operation.errno if operation.errno
+    #raise operation.errno if operation.errno
     if operation.type != :cancel
       ares.process_fd((operation.readable?) ? operation.sock : -1, (operation.writable?) ? operation.sock : -1)
     end

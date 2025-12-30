@@ -10,5 +10,5 @@ MRuby::Build.new do |conf|
     conf.enable_bintest
     conf.gembox 'full-core'
     conf.gem File.expand_path(File.dirname(__FILE__))
-    conf.gem mgem: 'mruby-poll'
+    conf.gem mgem: 'mruby-io-uring'
   end
