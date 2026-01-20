@@ -10,7 +10,7 @@ def const_gen(spec)
       next if (match[1] == "GETSOCK_READABLE(bits,")
       next if (match[1] == "GETSOCK_WRITABLE(bits,")
       d.write <<-C
-mrb_cares_define_const("#{match[1]}", ARES_#{match[1]});
+mrb_cares_define_const(MRB_SYM(#{match[1]}), ARES_#{match[1]});
 C
     end
   end
@@ -28,7 +28,7 @@ C
     if (key && val != "0")
       key = key.gsub(/[^a-zA-Z0-9_]/, '')
       d.write <<-C
-mrb_cares_define_ares_status("#{key[5..-1]}", #{key});
+mrb_cares_define_ares_status(MRB_SYM(#{key[5..-1]}), #{key});
 C
     end
   end
@@ -43,7 +43,7 @@ C
     if (key && val != "0")
       key = key.gsub(/[^a-zA-Z0-9_]/, '')
       d.write <<-C
-mrb_cares_define_ares_dns_rec_type("#{key[14..-1]}", #{key});
+mrb_cares_define_ares_dns_rec_type(MRB_SYM(#{key[14..-1]}), #{key});
 C
     end
   end
@@ -54,7 +54,7 @@ C
     if (key && val != "0")
       key = key.gsub(/[^a-zA-Z0-9_]/, '')
       d.write <<-C
-mrb_cares_define_ares_dns_class_type("#{key[11..-1]}", #{key});
+mrb_cares_define_ares_dns_class_type(MRB_SYM(#{key[11..-1]}), #{key});
 C
     end
   end

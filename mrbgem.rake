@@ -46,6 +46,8 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.cxx.include_paths << "#{spec.build_dir}/src"
   spec.cxx.defines << "CARES_STATICLIB"
   spec.add_dependency 'mruby-socket'
+  spec.add_dependency 'mruby-c-ext-helpers'
+  spec.add_dependency 'mruby-uri-parser'
   spec.add_test_dependency 'mruby-io-uring'
 
   spec.license = 'MIT'

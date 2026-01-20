@@ -8,7 +8,7 @@ MRuby::Build.new do |conf|
     conf.enable_debug
     conf.enable_test
     conf.enable_bintest
-    conf.gembox 'full-core'
+    conf.gembox 'default'
     conf.gem File.expand_path(File.dirname(__FILE__))
     conf.gem mgem: 'mruby-io-uring'
   end
