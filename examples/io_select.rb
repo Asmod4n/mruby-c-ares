@@ -20,7 +20,7 @@ Ares.run do |dns|
     p "example https"
     p hostent
   end
-  dns.query("example.com", :NS) do |timeouts, hostent, error|
+  dns.query("example.com", :AAAA) do |timeouts, hostent, error|
     p "example.com aaaa"
     p hostent
   end
