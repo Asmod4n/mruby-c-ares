@@ -6,26 +6,13 @@ Supports `getaddrinfo`, `getnameinfo`, and arbitrary DNS record queries (A, AAAA
 
 ## Requirements
 
-c-ares >= 1.16.0 with development headers, and a 64-bit mruby build (`MRB_INT_BIT >= 64`).
+c-ares >= 1.16.0 is built from source automatically (via the `deps/c-ares` git submodule and CMake). You need:
 
-**Debian/Ubuntu:**
-```
-apt install libc-ares-dev
-```
+- **CMake** (for building c-ares)
+- A C/C++ compiler (gcc or clang)
+- A 64-bit mruby build (`MRB_INT_BIT >= 64`)
 
-**macOS (Homebrew):**
-```
-brew install c-ares
-```
-
-**openSUSE:**
-```
-zypper install c-ares-devel
-```
-
-For other platforms, check your package manager for a `c-ares` package or build from source: https://github.com/c-ares/c-ares/blob/main/INSTALL.md
-
-If none of those options work, the gem includes c-ares as a git submodule under `deps/c-ares` and will build it automatically via CMake when the system library isn't found.
+The gem builds c-ares from source automatically via CMake using the git submodule under `deps/c-ares` — no system installation required. Make sure to clone with `--recursive` or run `git submodule update --init` to fetch it.
 
 ## Installation
 
