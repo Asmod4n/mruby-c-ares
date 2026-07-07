@@ -303,3 +303,50 @@ assert('Ares#getaddrinfo resolves via a local fixture DNS server') do
   assert_equal(1, addrinfos.size)
   assert_equal('203.0.113.42', addrinfos.first.ip_address)
 end
+
+# Exceptions raised inside a c-ares callback block must not unwind through
+# c-ares' plain C stack frames. The C shim parks them in mrb->exc instead,
+# and mruby re-raises them as soon as control returns from process/query/
+# getaddrinfo, so they surface as perfectly ordinary Ruby exceptions.
+
+assert('Ares#query raising inside the callback surfaces as a Ruby exception') do
+  assert_raise(RuntimeError) do
+    with_fixture_dns_server('203.0.113.42') do |ares|
+      ares.query('raise.mruby-c-ares.test', :A) do |_timeouts, _answers, _extra_or_error|
+        raise 'boom from query callback'
+      end
+    end
+  end
+
+  # No corrupted global state: an unrelated query still succeeds afterwards.
+  answers = nil
+  with_fixture_dns_server('203.0.113.42') do |ares|
+    ares.query('after-raise.mruby-c-ares.test', :A) do |_timeouts, ans, _extra_or_error|
+      answers = ans
+    end
+  end
+  assert_kind_of(Array, answers)
+  assert_equal(1, answers.size)
+  assert_equal('203.0.113.42', answers.first[:a_addr])
+end
+
+assert('Ares#getaddrinfo raising inside the callback surfaces as a Ruby exception') do
+  assert_raise(RuntimeError) do
+    with_fixture_dns_server('203.0.113.42') do |ares|
+      ares.getaddrinfo('raise.mruby-c-ares.test', 80, 0, Socket::AF_INET) do |_timeouts, _cnames, _ai, _err|
+        raise 'boom from getaddrinfo callback'
+      end
+    end
+  end
+
+  # No corrupted global state: an unrelated lookup still succeeds afterwards.
+  addrinfos = nil
+  with_fixture_dns_server('203.0.113.42') do |ares|
+    ares.getaddrinfo('after-raise.mruby-c-ares.test', 80, 0, Socket::AF_INET) do |_timeouts, _cnames, ai, _err|
+      addrinfos = ai
+    end
+  end
+  assert_kind_of(Array, addrinfos)
+  assert_equal(1, addrinfos.size)
+  assert_equal('203.0.113.42', addrinfos.first.ip_address)
+end

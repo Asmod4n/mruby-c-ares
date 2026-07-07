@@ -135,6 +135,32 @@ mrb_cares_response_error(mrb_state *mrb, int status)
   }
 }
 
+/*
+ * c-ares invokes the callbacks below from plain C stack frames (either
+ * synchronously from ares_getaddrinfo()/ares_getnameinfo()/ares_query_dnsrec(),
+ * or from deep inside ares_process()/ares_process_fd()). An mruby exception
+ * (a real C++ exception with MRB_USE_CXX_EXCEPTION) must never unwind through
+ * those frames. Each callback therefore runs its entire risky body (all
+ * mrb_value construction plus the final yield) under mrb_protect_error();
+ * on failure we just park the exception in mrb->exc and return normally --
+ * mruby checks mrb->exc at every call boundary and re-raises it automatically
+ * once control returns to one of our own registered methods.
+ */
+template <typename Body>
+static void
+mrb_cares_protected_call(mrb_state *mrb, Body body)
+{
+  mrb_bool error = FALSE;
+  mrb_value result = mrb_protect_error(mrb, [](mrb_state *mrb_, void *userdata) -> mrb_value {
+    (*static_cast<Body *>(userdata))();
+    (void) mrb_;
+    return mrb_nil_value();
+  }, &body, &error);
+  if (error) {
+    mrb->exc = mrb_obj_ptr(result);
+  }
+}
+
 static void
 mrb_ares_sock_state_cb(void *data, ares_socket_t socket_fd, int readable, int writable)
 {
@@ -142,11 +168,14 @@ mrb_ares_sock_state_cb(void *data, ares_socket_t socket_fd, int readable, int wr
   if (mrb_cares_ctx->destruction)
     return;
   mrb_state *mrb = mrb_cares_ctx->mrb;
+  if (mrb->exc)
+    return;
+
   int idx = mrb_gc_arena_save(mrb);
-
-  mrb_value argv[] = {mrb_convert_number(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
-  mrb_yield_argv(mrb, mrb_cares_ctx->block, NELEMS(argv), argv);
-
+  mrb_cares_protected_call(mrb, [&] {
+    mrb_value argv[] = {mrb_convert_number(mrb, socket_fd), mrb_bool_value(readable), mrb_bool_value(writable)};
+    mrb_yield_argv(mrb, mrb_cares_ctx->block, NELEMS(argv), argv);
+  });
   mrb_gc_arena_restore(mrb, idx);
 }
 
@@ -171,43 +200,44 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
     return;
 
   mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
-  int idx = mrb_gc_arena_save(mrb);
-
-  auto cleanup = [&] {
+  if (mrb->exc) {
     ares_freeaddrinfo(result);
     mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
-  };
-  struct Guard {
-      std::function<void()> fn;
-      ~Guard() { fn(); }
-  } guard{cleanup};
-
-  mrb_value argv[4] = {mrb_nil_value()};
-  argv[0] = mrb_convert_number(mrb, timeouts);
-  mrb_gc_protect(mrb, argv[0]);
-  if (likely(ARES_SUCCESS == status)) {
-    struct ares_addrinfo_cname *cname = result->cnames;
-    if (cname) {
-      argv[1] = mrb_ary_new_capa(mrb, 1);
-      mrb_gc_protect(mrb, argv[1]);
-      do {
-        mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
-      } while ((cname = cname->next));
-    }
-    struct ares_addrinfo_node *node = result->nodes;
-    if (node) {
-      argv[2] = mrb_ary_new_capa(mrb, 1);
-      mrb_gc_protect(mrb, argv[2]);
-      do {
-        mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb, mrb_cares_args, node));
-      } while ((node = node->ai_next));
-    }
-  } else {
-    argv[3] = mrb_cares_response_error(mrb, status);
-    mrb_gc_protect(mrb, argv[3]);
+    return;
   }
-  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+
+  int idx = mrb_gc_arena_save(mrb);
+  mrb_cares_protected_call(mrb, [&] {
+    mrb_value argv[4] = {mrb_nil_value()};
+    argv[0] = mrb_convert_number(mrb, timeouts);
+    mrb_gc_protect(mrb, argv[0]);
+    if (likely(ARES_SUCCESS == status)) {
+      struct ares_addrinfo_cname *cname = result->cnames;
+      if (cname) {
+        argv[1] = mrb_ary_new_capa(mrb, 1);
+        mrb_gc_protect(mrb, argv[1]);
+        do {
+          mrb_ary_push(mrb, argv[1], mrb_str_new_cstr(mrb, cname->name));
+        } while ((cname = cname->next));
+      }
+      struct ares_addrinfo_node *node = result->nodes;
+      if (node) {
+        argv[2] = mrb_ary_new_capa(mrb, 1);
+        mrb_gc_protect(mrb, argv[2]);
+        do {
+          mrb_ary_push(mrb, argv[2], mrb_cares_get_ai(mrb, mrb_cares_args, node));
+        } while ((node = node->ai_next));
+      }
+    } else {
+      argv[3] = mrb_cares_response_error(mrb, status);
+      mrb_gc_protect(mrb, argv[3]);
+    }
+    mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+  });
   mrb_gc_arena_restore(mrb, idx);
+
+  ares_freeaddrinfo(result);
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
 }
 
 static void
@@ -218,26 +248,34 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
     return;
 
   mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
-  int idx = mrb_gc_arena_save(mrb);
-  mrb_value argv[4] = {mrb_nil_value()};
-  argv[0] = mrb_convert_number(mrb, timeouts);
-  mrb_gc_protect(mrb, argv[0]);
-  if (likely(ARES_SUCCESS == status)) {
-    if (node) {
-      argv[1] = mrb_str_new_cstr(mrb, node);
-      mrb_gc_protect(mrb, argv[1]);
-    }
-    if (service) {
-      argv[2] = mrb_str_new_cstr(mrb, service);
-      mrb_gc_protect(mrb, argv[2]);
-    }
-  } else {
-    argv[3] = mrb_cares_response_error(mrb, status);
-    mrb_gc_protect(mrb, argv[3]);
+  if (mrb->exc) {
+    mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+    return;
   }
-  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
-  mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+
+  int idx = mrb_gc_arena_save(mrb);
+  mrb_cares_protected_call(mrb, [&] {
+    mrb_value argv[4] = {mrb_nil_value()};
+    argv[0] = mrb_convert_number(mrb, timeouts);
+    mrb_gc_protect(mrb, argv[0]);
+    if (likely(ARES_SUCCESS == status)) {
+      if (node) {
+        argv[1] = mrb_str_new_cstr(mrb, node);
+        mrb_gc_protect(mrb, argv[1]);
+      }
+      if (service) {
+        argv[2] = mrb_str_new_cstr(mrb, service);
+        mrb_gc_protect(mrb, argv[2]);
+      }
+    } else {
+      argv[3] = mrb_cares_response_error(mrb, status);
+      mrb_gc_protect(mrb, argv[3]);
+    }
+    mrb_yield_argv(mrb, mrb_cares_args->block, NELEMS(argv), argv);
+  });
   mrb_gc_arena_restore(mrb, idx);
+
+  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
 }
 
 static mrb_value
@@ -759,25 +797,32 @@ mrb_ares_query_dnsrec_cb(void                     *arg,
   }
 
   mrb_state *mrb = args->mrb_cares_ctx->mrb;
-  int idx = mrb_gc_arena_save(mrb);
-  mrb_value argv[3] = {
-    mrb_convert_number(mrb, timeouts),
-    mrb_nil_value(),
-    mrb_nil_value()
-  };
-
-  if (status == ARES_SUCCESS) {
-    mrb_ares_parse_dnsrec_list(mrb, args, argv, dnsrec);
-  } else {
-    argv[2] = mrb_cares_response_error(mrb, status);
+  if (mrb->exc) {
+    mrb_iv_remove(mrb, args->mrb_cares_ctx->cares, args->obj_id);
+    return;
   }
+
+  int idx = mrb_gc_arena_save(mrb);
+  mrb_cares_protected_call(mrb, [&] {
+    mrb_value argv[3] = {
+      mrb_convert_number(mrb, timeouts),
+      mrb_nil_value(),
+      mrb_nil_value()
+    };
+
+    if (status == ARES_SUCCESS) {
+      mrb_ares_parse_dnsrec_list(mrb, args, argv, dnsrec);
+    } else {
+      argv[2] = mrb_cares_response_error(mrb, status);
+    }
+
+    mrb_yield_argv(mrb, args->block, NELEMS(argv), argv);
+  });
+  mrb_gc_arena_restore(mrb, idx);
 
   mrb_iv_remove(mrb,
     args->mrb_cares_ctx->cares,
     args->obj_id);
-
-  mrb_yield_argv(mrb, args->block, NELEMS(argv), argv);
-  mrb_gc_arena_restore(mrb, idx);
 }
 
 //-------------------------------------------------------------------------
