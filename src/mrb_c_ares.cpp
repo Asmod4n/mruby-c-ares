@@ -211,7 +211,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
 }
 
 static void
-mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, const char *node, const char *service)
+mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, char *service)
 {
   struct mrb_cares_args *mrb_cares_args = (struct mrb_cares_args *) arg;
   if (ARES_EDESTRUCTION == status)
