@@ -211,7 +211,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
 }
 
 static void
-mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, char *service)
+mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, const char *node, const char *service)
 {
   struct mrb_cares_args *mrb_cares_args = (struct mrb_cares_args *) arg;
   if (ARES_EDESTRUCTION == status)
@@ -1379,7 +1379,7 @@ mrb_cares_register_ruby(mrb_state *mrb)
   struct RClass *mrb_ares_class, *mrb_ares_options_class;
   mrb_ares_class = mrb_class_get_id(mrb, MRB_SYM(Ares));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(initialize),        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
-  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getaddrinfo),       mrb_ares_getaddrinfo,           MRB_ARGS_REQ(3)|MRB_ARGS_BLOCK());
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getaddrinfo),       mrb_ares_getaddrinfo,           MRB_ARGS_ARG(2, 4)|MRB_ARGS_BLOCK());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getnameinfo),       mrb_ares_getnameinfo,           MRB_ARGS_ARG(1, 1)|MRB_ARGS_BLOCK());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(query),            mrb_ares_query,                MRB_ARGS_ARG(2, 1)|MRB_ARGS_BLOCK());
   mrb_define_alias_id (mrb, mrb_ares_class, MRB_SYM(search), MRB_SYM(query));
@@ -1387,8 +1387,11 @@ mrb_cares_register_ruby(mrb_state *mrb)
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(process_fd),        mrb_ares_process_fd,            MRB_ARGS_REQ(2));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(process),           mrb_ares_process,               MRB_ARGS_REQ(2));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(servers_ports_csv),mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM_E(servers_ports_csv),mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(local_ip4),        mrb_ares_set_local_ip4,         MRB_ARGS_REQ(1));
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM_E(local_ip4),      mrb_ares_set_local_ip4,         MRB_ARGS_REQ(1));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(local_ip6),        mrb_ares_set_local_ip6,         MRB_ARGS_REQ(1));
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM_E(local_ip6),      mrb_ares_set_local_ip6,         MRB_ARGS_REQ(1));
   mrb_ares_options_class = mrb_define_class_under_id(mrb, mrb_ares_class, MRB_SYM(Options), mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_options_class, MRB_TT_CDATA);
   mrb_undef_method_id(mrb, mrb_ares_class, MRB_SYM(initialize_copy));
@@ -1419,6 +1422,7 @@ mrb_cares_register_ruby(mrb_state *mrb)
 #ifdef ARES_OPT_DOMAINS
   mrb_ary_push(mrb, available_options, mrb_symbol_value(MRB_SYM(domains)));
   mrb_define_method_id(mrb, mrb_ares_options_class, MRB_SYM_E(domains),     mrb_ares_options_domains_set,         MRB_ARGS_ANY());
+  mrb_define_method_id(mrb, mrb_ares_options_class, MRB_SYM(domains_set),   mrb_ares_options_domains_set,         MRB_ARGS_ANY());
 #endif
 #ifdef ARES_OPT_EDNSPSZ
   mrb_ary_push(mrb, available_options, mrb_symbol_value(MRB_SYM(ednspsz)));

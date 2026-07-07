@@ -2,7 +2,7 @@ require_relative 'src/const_gen.rb'
 MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
 
   build_root   = "#{spec.build_dir}/build"
-  install_lib  = "#{build_root}/lib64/libcares.a"
+  install_lib  = "#{build_root}/lib/libcares.a"
   install_hdr  = "#{build_root}/include/ares.h"
 
   FileUtils.mkdir_p(build_root)
@@ -22,6 +22,7 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
       "-DCARES_SHARED=Off",
       "-DCMAKE_C_FLAGS=#{c_flags}",
       "-DCMAKE_INSTALL_PREFIX=#{build_root}",
+      "-DCMAKE_INSTALL_LIBDIR=lib",
       "#{spec.dir}/deps/c-ares/"
     ].join(" ")
 
@@ -49,6 +50,7 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.add_dependency 'mruby-c-ext-helpers'
   spec.add_dependency 'mruby-uri-parser'
   spec.add_test_dependency 'mruby-io-uring'
+  spec.add_test_dependency 'mruby-pack'
 
   spec.license = 'MIT'
   spec.author  = 'Hendrik Beskow'

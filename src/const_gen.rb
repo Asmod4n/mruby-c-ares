@@ -4,7 +4,7 @@ def const_gen(spec)
   spec.cxx.defines << "CARES_CONST_CSTUB=\\\"#{d.path}\\\""
 
   define_match = /^[ \t]*#define ARES_(\S+)[ \t]*((?:.*\\\r?\n)*.*)/m
-  IO.readlines(spec.cc.search_header('ares.h')).each do |line|
+  IO.readlines(spec.cxx.search_header('ares.h')).each do |line|
     if (match = define_match.match(line))
       next if (match[1] ==  "_H")
       next if (match[1] == "GETSOCK_READABLE(bits,")
@@ -15,7 +15,7 @@ C
     end
   end
 
-  header_content = File.read(spec.cc.search_header('ares.h'))
+  header_content = File.read(spec.cxx.search_header('ares.h'))
 
   header_content = header_content.gsub(/\/\/.*|\/\*.*?\*\//m, '')
 
@@ -33,7 +33,7 @@ C
     end
   end
 
-  header_content = File.read(spec.cc.search_header('ares_dns_record.h'))
+  header_content = File.read(spec.cxx.search_header('ares_dns_record.h'))
 
   header_content = header_content.gsub(/\/\/.*|\/\*.*?\*\//m, '')
 
