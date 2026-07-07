@@ -303,3 +303,53 @@ assert('Ares#getaddrinfo resolves via a local fixture DNS server') do
   assert_equal(1, addrinfos.size)
   assert_equal('203.0.113.42', addrinfos.first.ip_address)
 end
+
+# c-ares invokes our callbacks directly from its own C call stack (including
+# synchronously, and from deep inside ares_process). A Ruby exception raised
+# inside a query/getaddrinfo/getnameinfo/sock-state block must not be allowed
+# to unwind through that C stack -- it has to surface as a normal exception
+# from the mruby-level call that was driving the event loop, without
+# crashing the process.
+class ArgumentErrorFromCallback < StandardError; end
+
+assert("an exception raised inside a query callback surfaces cleanly") do
+  assert_raise(ArgumentErrorFromCallback) do
+    with_fixture_dns_server('203.0.113.42') do |ares|
+      ares.query('fixture.mruby-c-ares.test', :A) do |*_args|
+        raise ArgumentErrorFromCallback, 'boom from query callback'
+      end
+    end
+  end
+end
+
+assert("an exception raised inside a getaddrinfo callback surfaces cleanly") do
+  assert_raise(ArgumentErrorFromCallback) do
+    with_fixture_dns_server('203.0.113.42') do |ares|
+      ares.getaddrinfo('fixture.mruby-c-ares.test', 80, 0, Socket::AF_INET) do |*_args|
+        raise ArgumentErrorFromCallback, 'boom from getaddrinfo callback'
+      end
+    end
+  end
+end
+
+assert("the Ares instance stays usable after a callback raised") do
+  assert_raise(ArgumentErrorFromCallback) do
+    with_fixture_dns_server('203.0.113.42') do |ares|
+      ares.query('fixture.mruby-c-ares.test', :A) do |*_args|
+        raise ArgumentErrorFromCallback, 'boom'
+      end
+    end
+  end
+
+  # A fresh, unrelated resolver context must still work after the crash-free
+  # unwind above -- nothing about the failure should have corrupted global
+  # mruby or c-ares state.
+  answers = nil
+  with_fixture_dns_server('203.0.113.42') do |ares|
+    ares.query('fixture.mruby-c-ares.test', :A) do |_timeouts, ans, _extra_or_error|
+      answers = ans
+    end
+  end
+  assert_kind_of(Array, answers)
+  assert_equal('203.0.113.42', answers.first[:a_addr])
+end
