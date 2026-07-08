@@ -52,7 +52,7 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   if spec.cxx.command.to_s =~ /\bcl(\.exe)?\z/i
     spec.cxx.flags << '/std:c++20'
   else
-    spec.cxx.flags << '-std=gnu++20'
+    spec.cxx.flags << '-std=c++20'
   end
   spec.add_dependency 'mruby-socket'
   spec.add_dependency 'mruby-c-ext-helpers'
