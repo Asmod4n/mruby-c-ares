@@ -422,7 +422,9 @@ mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
   mrb_value block = mrb_nil_value();
   mrb_get_args(mrb, "i|z!ii&", &af, &ip_address, &port, &flags, &block);
 
-  ss.ss_family = (sa_family_t) af;
+  /* decltype instead of sa_family_t: the POSIX type doesn't exist on
+   * Windows, where ss_family is an ADDRESS_FAMILY (USHORT) */
+  ss.ss_family = (decltype(ss.ss_family)) af;
   switch (ss.ss_family) {
     case AF_INET: {
       struct sockaddr_in *sa_in = (struct sockaddr_in *) &ss;
@@ -810,7 +812,7 @@ mrb_ares_parse_dnsrec_list(mrb_state *mrb,
 static void
 mrb_ares_query_dnsrec_cb(void                     *arg,
                          ares_status_t             status,
-                         unsigned long             timeouts,
+                         size_t                    timeouts,
                          const ares_dns_record_t  *dnsrec)
 {
   struct mrb_cares_args *args = (struct mrb_cares_args*)arg;
