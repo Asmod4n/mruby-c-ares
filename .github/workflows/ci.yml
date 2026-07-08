@@ -6,6 +6,9 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -13,9 +16,35 @@ concurrency:
 env:
   MRUBY_CONFIG: .github/ci/build_config.rb
 
+# Merging a PR pushes a merge commit whose tree the PR run just tested, so the
+# push-triggered duplicate is skipped by matching the merge-commit message.
+# Direct pushes (and everything else) run normally.
 jobs:
+  # Fail fast if a tool-generated session URL sneaks into the tree or into a
+  # commit message — those identifiers must never be published. The tree grep
+  # excludes this workflow (it must name the patterns).
+  hygiene:
+    name: no session URLs
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+      - name: Reject session URLs in files and recent commit messages
+        run: |
+          set -e
+          pattern='claude\.ai/code|session_01|Claude-Session:'
+          if git grep -nE "$pattern" -- . ':!.github/workflows/ci.yml'; then
+            echo '::error::session URL found in the tree'; exit 1
+          fi
+          if git log -50 --format=%B | grep -nE "$pattern"; then
+            echo '::error::session URL found in a commit message'; exit 1
+          fi
+
   native:
     name: ${{ matrix.name }}
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     strategy:
@@ -61,6 +90,7 @@ jobs:
 
   musl:
     name: Linux x86_64 (musl, Alpine)
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     container: alpine:latest
     timeout-minutes: 45
@@ -86,6 +116,7 @@ jobs:
 
   freebsd:
     name: FreeBSD 14 x86_64 (QEMU VM)
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
@@ -108,6 +139,7 @@ jobs:
 
   s390x:
     name: Linux s390x big-endian (QEMU user emulation)
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 300
     steps:
@@ -136,6 +168,7 @@ jobs:
     # IO.select-based test harness assumes POSIX fds, so this job only
     # verifies that everything compiles and links with MSVC.
     name: Windows x64 (MSVC, build only)
+    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 60
@@ -145,24 +178,17 @@ jobs:
         with:
           submodules: recursive
 
+      # windows-toolchain: none keeps setup-ruby from installing the
+      # MSYS2/MinGW devkit, whose coreutils `link` shadows MSVC's link.exe
+      # and whose gcc headers leak into INCLUDE for the c-ares CMake build.
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.4'
+          windows-toolchain: none
 
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
-
-      # ruby/setup-ruby's msys2 (and Git for Windows) ship GNU coreutils'
-      # `link`, which shadows MSVC's link.exe on PATH and breaks the mruby
-      # linker invocation with `link: extra operand '/INCREMENTAL:NO'`.
-      - name: Remove GNU coreutils link.exe shadowing MSVC's linker
-        shell: pwsh
-        run: |
-          foreach ($p in @('C:\msys64\usr\bin\link.exe', 'C:\Program Files\Git\usr\bin\link.exe')) {
-            if (Test-Path $p) { Remove-Item -Force $p; Write-Host "removed $p" }
-          }
-          Get-Command link.exe | Format-List Source
 
       - name: Build
         run: rake build
