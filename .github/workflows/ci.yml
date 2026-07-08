@@ -9,9 +9,8 @@ on:
 permissions:
   contents: read
 
-# Concurrency is declared per-job (not workflow-wide) so that a new push
-# cancels the fast jobs but lets the multi-hour emulated s390x job finish;
-# its successor queues instead.
+# Big-endian s390x coverage lives in its own workflow (s390x.yml): the fully
+# emulated build takes hours and shouldn't couple to this fast matrix.
 env:
   MRUBY_CONFIG: .github/ci/build_config.rb
 
@@ -147,37 +146,6 @@ jobs:
           run: |
             set -e
             MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=clang rake test
-
-  s390x:
-    name: Linux s390x big-endian (QEMU user emulation)
-    if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
-    runs-on: ubuntu-latest
-    timeout-minutes: 300
-    # Never cancel a running s390x job: everything is emulated, so a run
-    # takes hours; a superseding push queues here instead.
-    concurrency:
-      group: ${{ github.workflow }}-${{ github.ref }}-s390x
-      cancel-in-progress: false
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      # Big-endian coverage: this gem parses DNS wire format, so s390x is the
-      # most valuable emulated target. Everything (compiler included) runs
-      # under qemu-user, so this job is slow but thorough.
-      - name: Build and test on s390x
-        uses: uraimo/run-on-arch-action@v3
-        with:
-          arch: s390x
-          distro: ubuntu22.04
-          githubToken: ${{ github.token }}
-          install: |
-            apt-get update -q -y
-            apt-get install -q -y build-essential cmake git ruby rake
-          run: |
-            MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=gcc rake test
 
   windows:
     # Runs the full mrbtest suite with MSVC, network fixtures included:

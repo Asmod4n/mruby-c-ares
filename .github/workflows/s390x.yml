@@ -1,0 +1,41 @@
+name: s390x
+
+# Big-endian coverage: this gem parses DNS wire format, so s390x is the most
+# valuable emulated target. Everything (compiler included) runs under
+# qemu-user, so a run takes hours — that's why this lives outside the main CI
+# matrix: it runs after merges to main and on demand (workflow_dispatch),
+# not on every branch push.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  s390x:
+    name: Linux s390x big-endian (QEMU user emulation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build and test on s390x
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: s390x
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update -q -y
+            apt-get install -q -y build-essential cmake git ruby rake
+          run: |
+            MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=gcc rake test
