@@ -30,9 +30,12 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
     end
   end
 
-  # Linker flag (Windows uses `.lib`, Unix uses `.a`)
+  # Linker flag (Windows uses `.lib`, Unix uses `.a`). With CARES_SHARED=Off
+  # c-ares' CMake installs the static library as plain `cares.lib` on Windows
+  # (the `_static` suffix only applies when the shared lib is built too).
   if spec.for_windows?
-    spec.linker.flags_before_libraries << "#{build_root}/lib/libcares.lib"
+    spec.linker.flags_before_libraries << "#{build_root}/lib/cares.lib"
+    spec.linker.libraries << 'ws2_32' << 'iphlpapi'
   else
     spec.linker.flags_before_libraries << install_lib
   end
@@ -42,7 +45,9 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.cxx.defines << "CARES_STATICLIB"
   spec.add_dependency 'mruby-socket'
   spec.add_dependency 'mruby-c-ext-helpers'
-  spec.add_test_dependency 'mruby-io-uring'
+  # mruby-io-uring is Linux-only and nothing under test/ uses it (only
+  # examples/io_uring.rb does), so it must not be a test dependency or
+  # `rake test` breaks on every non-Linux platform.
   spec.add_test_dependency 'mruby-pack'
 
   spec.license = 'MIT'

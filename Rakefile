@@ -6,12 +6,14 @@ end
 
 desc "test"
 task :test => :mruby do
-  sh "cd mruby && MRUBY_CONFIG=#{MRUBY_CONFIG} rake all test"
+  # env hash + chdir instead of `cd x && VAR=val ...` so this also works
+  # under cmd.exe on Windows
+  sh({"MRUBY_CONFIG" => MRUBY_CONFIG}, "rake all test", chdir: "mruby")
 end
 
 desc "cleanup"
 task :clean do
-  sh "cd mruby && rake deep_clean"
+  sh "rake deep_clean", chdir: "mruby"
 end
 
 desc "constgen"
