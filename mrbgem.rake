@@ -43,6 +43,8 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.cxx.include_paths << "#{build_root}/include"
   spec.cxx.include_paths << "#{spec.build_dir}/src"
   spec.cxx.defines << "CARES_STATICLIB"
+  # MSVC needs an explicit standard for the designated initializers in src/
+  spec.cxx.flags << '/std:c++20' if spec.cxx.command.to_s =~ /\bcl(\.exe)?\z/i
   spec.add_dependency 'mruby-socket'
   spec.add_dependency 'mruby-c-ext-helpers'
   # mruby-io-uring is Linux-only and nothing under test/ uses it (only

@@ -2,14 +2,42 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'claude/**']
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  MRUBY_CONFIG: .github/ci/build_config.rb
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
+  native:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux x86_64 (gcc + ASan/UBSan)
+            os: ubuntu-latest
+            toolchain: gcc
+            sanitize: '1'
+          - name: Linux x86_64 (clang)
+            os: ubuntu-latest
+            toolchain: clang
+          - name: Linux arm64 (gcc)
+            os: ubuntu-24.04-arm
+            toolchain: gcc
+          - name: macOS arm64 (clang)
+            os: macos-latest
+            toolchain: clang
+          - name: macOS x86_64 (clang)
+            os: macos-15-intel
+            toolchain: clang
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -19,10 +47,113 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.3'
+          ruby-version: '3.4'
 
-      - name: Install build dependencies
+      - name: Install build dependencies (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y cmake
 
       - name: Run test suite
         run: rake test
+        env:
+          MRUBY_TOOLCHAIN: ${{ matrix.toolchain }}
+          MRUBY_SANITIZE: ${{ matrix.sanitize || '' }}
+
+  musl:
+    name: Linux x86_64 (musl, Alpine)
+    runs-on: ubuntu-latest
+    container: alpine:latest
+    timeout-minutes: 45
+    steps:
+      # actions/checkout needs a glibc node runtime, which musl lacks, so
+      # clone manually inside the container.
+      - name: Install build dependencies
+        run: apk add --no-cache build-base cmake git ruby ruby-rake linux-headers
+
+      - name: Check out repository
+        run: |
+          git config --global --add safe.directory '*'
+          git init .
+          git remote add origin "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY.git"
+          git fetch --depth 1 origin "$GITHUB_SHA"
+          git checkout FETCH_HEAD
+          git submodule update --init --depth 1
+
+      - name: Run test suite
+        run: rake test
+        env:
+          MRUBY_TOOLCHAIN: gcc
+
+  freebsd:
+    name: FreeBSD 14 x86_64 (QEMU VM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build and test in FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
+        with:
+          release: '14.3'
+          usesh: true
+          copyback: false
+          # cmake's "Unix Makefiles" generator needs GNU make (gmake) on BSD
+          prepare: pkg install -y git cmake gmake ruby rubygem-rake
+          run: |
+            set -e
+            MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=clang rake test
+
+  s390x:
+    name: Linux s390x big-endian (QEMU user emulation)
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Big-endian coverage: this gem parses DNS wire format, so s390x is the
+      # most valuable emulated target. Everything (compiler included) runs
+      # under qemu-user, so this job is slow but thorough.
+      - name: Build and test on s390x
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: s390x
+          distro: ubuntu22.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update -q -y
+            apt-get install -q -y build-essential cmake git ruby rake
+          run: |
+            MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=gcc rake test
+
+  windows:
+    # Experimental: the C shim and c-ares both build on Windows, but the
+    # IO.select-based test harness assumes POSIX fds, so this job only
+    # verifies that everything compiles and links with MSVC.
+    name: Windows x64 (MSVC, build only)
+    runs-on: windows-latest
+    continue-on-error: true
+    timeout-minutes: 60
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+
+      - name: Set up MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Build
+        run: rake build
+        env:
+          MRUBY_TOOLCHAIN: visualcpp
