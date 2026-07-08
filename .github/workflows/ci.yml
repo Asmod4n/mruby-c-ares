@@ -180,10 +180,11 @@ jobs:
             MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=gcc rake test
 
   windows:
-    # Runs the full mrbtest suite with MSVC. The network-fixture tests skip
-    # themselves on Windows (Ares::WINDOWS): the IO.select event loop drives
-    # POSIX fds while c-ares hands out winsock SOCKET handles. Non-blocking
-    # until the suite proves stable on MSVC.
+    # Runs the full mrbtest suite with MSVC, network fixtures included:
+    # mruby-io's fd convention on Windows is the raw winsock SOCKET
+    # (IO.for_fd validates via getsockopt, IO.select is winsock select),
+    # which is exactly what c-ares hands out. Non-blocking until the suite
+    # proves stable on MSVC.
     name: Windows x64 (MSVC)
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: windows-latest
