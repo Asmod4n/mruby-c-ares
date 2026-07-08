@@ -5,6 +5,14 @@
 #include <string.h>
 
 #ifdef _WIN32
+  /* keep windows.h from defining min/max macros, which break
+   * std::numeric_limits<T>::max() in num_helpers.hpp */
+  #ifndef NOMINMAX
+    #define NOMINMAX
+  #endif
+  #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+  #endif
   #include <winsock2.h>
   #include <ws2tcpip.h>
   #include <windows.h>
