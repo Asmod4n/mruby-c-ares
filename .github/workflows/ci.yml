@@ -9,10 +9,9 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+# Concurrency is declared per-job (not workflow-wide) so that a new push
+# cancels the fast jobs but lets the multi-hour emulated s390x job finish;
+# its successor queues instead.
 env:
   MRUBY_CONFIG: .github/ci/build_config.rb
 
@@ -27,6 +26,9 @@ jobs:
     name: no session URLs
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-hygiene
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -47,6 +49,9 @@ jobs:
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-${{ matrix.name }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -94,6 +99,9 @@ jobs:
     runs-on: ubuntu-latest
     container: alpine:latest
     timeout-minutes: 45
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-musl
+      cancel-in-progress: true
     steps:
       # actions/checkout needs a glibc node runtime, which musl lacks, so
       # clone manually inside the container.
@@ -119,6 +127,9 @@ jobs:
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-freebsd
+      cancel-in-progress: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -142,6 +153,11 @@ jobs:
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    # Never cancel a running s390x job: everything is emulated, so a run
+    # takes hours; a superseding push queues here instead.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-s390x
+      cancel-in-progress: false
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -164,14 +180,18 @@ jobs:
             MRUBY_CONFIG=.github/ci/build_config.rb MRUBY_TOOLCHAIN=gcc rake test
 
   windows:
-    # Experimental: the C shim and c-ares both build on Windows, but the
-    # IO.select-based test harness assumes POSIX fds, so this job only
-    # verifies that everything compiles and links with MSVC.
-    name: Windows x64 (MSVC, build only)
+    # Runs the full mrbtest suite with MSVC. The network-fixture tests skip
+    # themselves on Windows (Ares::WINDOWS): the IO.select event loop drives
+    # POSIX fds while c-ares hands out winsock SOCKET handles. Non-blocking
+    # until the suite proves stable on MSVC.
+    name: Windows x64 (MSVC)
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: windows-latest
     continue-on-error: true
     timeout-minutes: 60
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}-windows
+      cancel-in-progress: true
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -190,7 +210,7 @@ jobs:
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Build
-        run: rake build
+      - name: Run test suite
+        run: rake test
         env:
           MRUBY_TOOLCHAIN: visualcpp

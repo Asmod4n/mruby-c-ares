@@ -1438,6 +1438,11 @@ mrb_cares_bootstrap(mrb_state *mrb)
   mrb_ares_class = mrb_define_class_id(mrb, MRB_SYM(Ares), mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_class, MRB_TT_CDATA);
   mrb_define_const_id (mrb, mrb_ares_class, MRB_SYM(VERSION),           mrb_str_new_lit_frozen(mrb, ARES_VERSION_STR));
+#ifdef _WIN32
+  mrb_define_const_id (mrb, mrb_ares_class, MRB_SYM(WINDOWS),           mrb_true_value());
+#else
+  mrb_define_const_id (mrb, mrb_ares_class, MRB_SYM(WINDOWS),           mrb_false_value());
+#endif
   mrb_ares_args_class = mrb_define_class_under_id(mrb, mrb_ares_class, MRB_SYM(_Args), mrb->object_class);
   MRB_SET_INSTANCE_TT(mrb_ares_args_class, MRB_TT_CDATA);
   mrb_ares_error_class = mrb_define_class_under_id(mrb, mrb_ares_class, MRB_SYM(Error), E_RUNTIME_ERROR);

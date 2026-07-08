@@ -308,6 +308,7 @@ ensure
 end
 
 assert('Ares#query resolves an A record via a local fixture DNS server') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   answers = nil
   extra = nil
   with_fixture_dns_server('203.0.113.42') do |ares|
@@ -328,6 +329,7 @@ assert('Ares#query resolves an A record via a local fixture DNS server') do
 end
 
 assert('Ares#query reports ENOTFOUND via a local fixture DNS server') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   answers = :unset
   error = nil
   with_fixture_dns_server(nil) do |ares|
@@ -342,6 +344,7 @@ assert('Ares#query reports ENOTFOUND via a local fixture DNS server') do
 end
 
 assert('Ares#search resolves via a local fixture DNS server') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   answers = nil
   with_fixture_dns_server('203.0.113.42') do |ares|
     # the name contains enough dots to be tried as-is first, so the fixture
@@ -356,6 +359,7 @@ assert('Ares#search resolves via a local fixture DNS server') do
 end
 
 assert('Ares.run survives select timeouts and reports an error for an unresponsive server') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   server = UDPSocket.new
   begin
     server.bind('127.0.0.1', 0)
@@ -378,6 +382,7 @@ assert('Ares.run survives select timeouts and reports an error for an unresponsi
 end
 
 assert('Ares#getaddrinfo resolves via a local fixture DNS server') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   addrinfos = nil
   error = nil
   with_fixture_dns_server('203.0.113.42') do |ares|
@@ -399,6 +404,7 @@ end
 # getaddrinfo, so they surface as perfectly ordinary Ruby exceptions.
 
 assert('Ares#query raising inside the callback surfaces as a Ruby exception') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   assert_raise(RuntimeError) do
     with_fixture_dns_server('203.0.113.42') do |ares|
       ares.query('raise.mruby-c-ares.test', :A) do |_timeouts, _answers, _extra_or_error|
@@ -420,6 +426,7 @@ assert('Ares#query raising inside the callback surfaces as a Ruby exception') do
 end
 
 assert('Ares#getaddrinfo raising inside the callback surfaces as a Ruby exception') do
+  skip 'the fixture event loop drives POSIX fds via IO.select' if Ares::WINDOWS
   assert_raise(RuntimeError) do
     with_fixture_dns_server('203.0.113.42') do |ares|
       ares.getaddrinfo('raise.mruby-c-ares.test', 80, 0, Socket::AF_INET) do |_timeouts, _cnames, _ai, _err|
