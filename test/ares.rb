@@ -259,6 +259,10 @@ end
 
 def with_fixture_dns_server(response_ip)
   server = UDPSocket.new
+  # The ensure below closes the socket explicitly, so the GC finalizer must
+  # not close it again: on Windows BasicSocket#close doesn't mark the IO
+  # closed, and a later finalizer closesocket() would hit a reused handle.
+  server.autoclose = false
   server.bind('127.0.0.1', 0)
   port = server.addr[1]
 
@@ -357,6 +361,7 @@ end
 
 assert('Ares.run survives select timeouts and reports an error for an unresponsive server') do
   server = UDPSocket.new
+  server.autoclose = false
   begin
     server.bind('127.0.0.1', 0)
     port = server.addr[1]
