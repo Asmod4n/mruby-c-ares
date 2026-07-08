@@ -41,34 +41,47 @@ class Ares
 end
 
 class Ares
-  @read_pollers  = {}   # fd => IO
-  @write_pollers = {}   # fd => IO
-
-  @ares = Ares.new do |socket, readable, writable|
-    if readable
-      @read_pollers[socket] ||= IO.for_fd(socket, "r")
-    else
-      @read_pollers.delete(socket)
-    end
-
-    if writable
-      @write_pollers[socket] ||= IO.for_fd(socket, "w")
-    else
-      @write_pollers.delete(socket)
-    end
-  end
-
-  def self.run(&block)
+  # Runs a self-contained IO.select event loop around a resolver created just
+  # for this call, so state from one run (pollers, half-finished queries, an
+  # exception raised inside a callback) can never leak into the next one.
+  def self.run(options = Ares::Options.new, &block)
     raise ArgumentError, "no block given" unless block
 
-    block.call(@ares)
+    read_pollers  = {}   # fd => IO
+    write_pollers = {}   # fd => IO
 
-    loop do
-      timeout = @ares.timeout
-      break if timeout <= 0.0
+    # The wrapper IOs must never close the fds on GC (autoclose = false):
+    # c-ares owns its sockets and closes them itself, and by then the OS may
+    # have handed the same fd number to someone else.
+    ares = Ares.new(options) do |socket, readable, writable|
+      if readable
+        unless read_pollers[socket]
+          io = IO.for_fd(socket, "r")
+          io.autoclose = false
+          read_pollers[socket] = io
+        end
+      else
+        read_pollers.delete(socket)
+      end
 
-      readable, writable = IO.select(@read_pollers.values, @write_pollers.values, nil, timeout)
-      @ares.process(readable, writable)
+      if writable
+        unless write_pollers[socket]
+          io = IO.for_fd(socket, "w")
+          io.autoclose = false
+          write_pollers[socket] = io
+        end
+      else
+        write_pollers.delete(socket)
+      end
+    end
+
+    block.call(ares)
+
+    while ares.active_queries > 0
+      # IO.select returns nil on timeout; processing with empty fd sets is
+      # exactly what lets c-ares handle retries and query timeouts.
+      readable, writable = IO.select(read_pollers.values, write_pollers.values, nil, ares.timeout)
+      ares.process(readable || [], writable || [])
     end
 
     self

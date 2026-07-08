@@ -41,8 +41,8 @@
 #include <functional>
 
 #include <ares.h>
-#if !((ARES_VERSION_MAJOR == 1 && ARES_VERSION_MINOR >= 16) || ARES_VERSION_MAJOR > 1)
-#error "mruby-c-ares needs at least c-ares Version 1.16.0"
+#if !((ARES_VERSION_MAJOR == 1 && ARES_VERSION_MINOR >= 28) || ARES_VERSION_MAJOR > 1)
+#error "mruby-c-ares needs at least c-ares Version 1.28.0 (ares_dns_record / ares_query_dnsrec APIs)"
 #endif
 #include <ares_dns_record.h>
 
@@ -71,7 +71,7 @@ struct mrb_cares_ctx {
 struct mrb_cares_args {
   struct mrb_cares_ctx *mrb_cares_ctx;
   mrb_value block;
-  mrb_int obj_id;
+  mrb_value holder;
   ares_dns_rec_type_t type;
 };
 
@@ -146,6 +146,22 @@ mrb_cares_response_error(mrb_state *mrb, int status)
  * mruby checks mrb->exc at every call boundary and re-raises it automatically
  * once control returns to one of our own registered methods.
  */
+/*
+ * Every in-flight request anchors its _Args holder (and thereby the block)
+ * in the @pending Hash on the Ares object, keyed by the holder itself.
+ * Registration happens before the ares_* call is issued because c-ares may
+ * invoke the callback synchronously (query cache hits, immediate failures),
+ * and the callback is what unregisters the holder again.
+ */
+static void
+mrb_cares_args_unregister(mrb_state *mrb, struct mrb_cares_args *mrb_cares_args)
+{
+  mrb_value pending = mrb_iv_get(mrb, mrb_cares_args->mrb_cares_ctx->cares, MRB_SYM(pending));
+  if (mrb_hash_p(pending)) {
+    mrb_hash_delete_key(mrb, pending, mrb_cares_args->holder);
+  }
+}
+
 template <typename Body>
 static void
 mrb_cares_protected_call(mrb_state *mrb, Body body)
@@ -202,7 +218,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
   mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
   if (mrb->exc) {
     ares_freeaddrinfo(result);
-    mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+    mrb_cares_args_unregister(mrb, mrb_cares_args);
     return;
   }
 
@@ -237,7 +253,7 @@ mrb_ares_getaddrinfo_callback(void *arg, int status, int timeouts, struct ares_a
   mrb_gc_arena_restore(mrb, idx);
 
   ares_freeaddrinfo(result);
-  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+  mrb_cares_args_unregister(mrb, mrb_cares_args);
 }
 
 static void
@@ -249,7 +265,7 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
 
   mrb_state *mrb = mrb_cares_args->mrb_cares_ctx->mrb;
   if (mrb->exc) {
-    mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+    mrb_cares_args_unregister(mrb, mrb_cares_args);
     return;
   }
 
@@ -275,7 +291,7 @@ mrb_ares_getnameinfo_callback(void *arg, int status, int timeouts, char *node, c
   });
   mrb_gc_arena_restore(mrb, idx);
 
-  mrb_iv_remove(mrb, mrb_cares_args->mrb_cares_ctx->cares, mrb_cares_args->obj_id);
+  mrb_cares_args_unregister(mrb, mrb_cares_args);
 }
 
 static mrb_value
@@ -292,6 +308,7 @@ mrb_ares_init_options(mrb_state *mrb, mrb_value self)
   }
   mrb_iv_set(mrb, self, MRB_SYM(options), options_val);
   mrb_iv_set(mrb, self, MRB_SYM(block),   block);
+  mrb_iv_set(mrb, self, MRB_SYM(pending), mrb_hash_new(mrb));
 
   struct mrb_cares_ctx *mrb_cares_ctx = (struct mrb_cares_ctx *) mrb_realloc(mrb, DATA_PTR(self), sizeof(*mrb_cares_ctx));
   mrb_data_init(self, mrb_cares_ctx, &mrb_cares_ctx_type);
@@ -326,9 +343,10 @@ struct mrb_cares_args **mrb_cares_args)
   (*mrb_cares_args)->block = block;
   mrb_value args = mrb_obj_value(args_data);
   mrb_gc_protect(mrb, args);
-  (*mrb_cares_args)->obj_id = mrb_obj_id(args);
+  (*mrb_cares_args)->holder = args;
   mrb_iv_set(mrb, args, MRB_SYM(cares), self);
   mrb_iv_set(mrb, args, MRB_SYM(block), block);
+  mrb_hash_set(mrb, mrb_iv_get(mrb, self, MRB_SYM(pending)), args, mrb_true_value());
 
   return args;
 }
@@ -374,14 +392,12 @@ mrb_ares_getaddrinfo(mrb_state *mrb, mrb_value self)
   }
 
   struct mrb_cares_args *mrb_cares_args;
-  mrb_value addrinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
-  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, addrinfo);
+  mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
 
   ares_getaddrinfo(mrb_cares_ctx->channel,
     name, service,
     &hints,
     mrb_ares_getaddrinfo_callback, mrb_cares_args);
-
 
   return self;
 }
@@ -403,16 +419,16 @@ mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
     case AF_INET: {
       struct sockaddr_in *sa_in = (struct sockaddr_in *) &ss;
       salen = sizeof(struct sockaddr_in);
-      if (ip_address)
-        ares_inet_pton(ss.ss_family, ip_address, &(sa_in->sin_addr));
+      if (ip_address && ares_inet_pton(ss.ss_family, ip_address, &(sa_in->sin_addr)) != 1)
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid IPv4 address: %s", ip_address);
       if (port)
         sa_in->sin_port = htons((uint16_t) port);
     } break;
     case AF_INET6: {
       struct sockaddr_in6 *sa_in6 = (struct sockaddr_in6 *) &ss;
       salen = sizeof(struct sockaddr_in6);
-      if (ip_address)
-        ares_inet_pton(ss.ss_family, ip_address, &(sa_in6->sin6_addr));
+      if (ip_address && ares_inet_pton(ss.ss_family, ip_address, &(sa_in6->sin6_addr)) != 1)
+        mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid IPv6 address: %s", ip_address);
       if (port)
         sa_in6->sin6_port = htons((uint16_t) port);
     } break;
@@ -433,14 +449,12 @@ mrb_ares_getnameinfo(mrb_state *mrb, mrb_value self)
   }
 
   struct mrb_cares_args *mrb_cares_args;
-  mrb_value nameinfo = mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
-  mrb_iv_set(mrb, self, mrb_cares_args->obj_id, nameinfo);
+  mrb_cares_make_args_struct(mrb, self, mrb_cares_ctx, block, &mrb_cares_args);
 
   ares_getnameinfo(mrb_cares_ctx->channel,
     (const struct sockaddr *) &ss, salen,
     flags,
     mrb_ares_getnameinfo_callback, mrb_cares_args);
-
 
   return self;
 }
@@ -798,7 +812,7 @@ mrb_ares_query_dnsrec_cb(void                     *arg,
 
   mrb_state *mrb = args->mrb_cares_ctx->mrb;
   if (mrb->exc) {
-    mrb_iv_remove(mrb, args->mrb_cares_ctx->cares, args->obj_id);
+    mrb_cares_args_unregister(mrb, args);
     return;
   }
 
@@ -820,16 +834,14 @@ mrb_ares_query_dnsrec_cb(void                     *arg,
   });
   mrb_gc_arena_restore(mrb, idx);
 
-  mrb_iv_remove(mrb,
-    args->mrb_cares_ctx->cares,
-    args->obj_id);
+  mrb_cares_args_unregister(mrb, args);
 }
 
 //-------------------------------------------------------------------------
-// 3) Entry point: query(name, :TYPE) { |timeouts, results, error| … }
+// 3) Entry points: query/search(name, :TYPE) { |timeouts, results, error| … }
 //-------------------------------------------------------------------------
 static mrb_value
-mrb_ares_query(mrb_state *mrb, mrb_value self)
+mrb_ares_query_common(mrb_state *mrb, mrb_value self, mrb_bool search)
 {
   struct mrb_cares_ctx *ctx =
     (struct mrb_cares_ctx*) mrb_data_get_ptr(mrb, self, &mrb_cares_ctx_type);
@@ -869,26 +881,66 @@ mrb_ares_query(mrb_state *mrb, mrb_value self)
   }
 
   struct mrb_cares_args *args;
-  mrb_value holder = mrb_cares_make_args_struct(
-                       mrb, self, ctx, block, &args);
+  mrb_cares_make_args_struct(mrb, self, ctx, block, &args);
   args->type = (ares_dns_rec_type_t)type;
 
-  unsigned short tmout = 0;
-  ares_status_t st = ares_query_dnsrec(
-    ctx->channel,
-    name,
-    (ares_dns_class_t)dnsclass,
-    (ares_dns_rec_type_t)type,
-    mrb_ares_query_dnsrec_cb,
-    args,
-    &tmout
-  );
-  if (st != ARES_SUCCESS) {
-    mrb_raise(mrb, E_RUNTIME_ERROR, ares_strerror(st));
+  unsigned short qid = 0;
+  if (search) {
+    /* ares_search_dnsrec takes a caller-built record; mirror ares_query's
+     * flags: recursion desired unless the user configured FLAG_NORECURSE. */
+    ares_dns_flags_t qflags = (ares_dns_flags_t) 0;
+    mrb_value options_val = mrb_iv_get(mrb, self, MRB_SYM(options));
+    struct mrb_cares_options *o =
+      (struct mrb_cares_options *) mrb_data_get_ptr(mrb, options_val, &mrb_cares_options_type);
+    if (!((o->optmask & ARES_OPT_FLAGS) && (o->options.flags & ARES_FLAG_NORECURSE)))
+      qflags = ARES_FLAG_RD;
+
+    ares_dns_record_t *dnsrec = NULL;
+    ares_status_t st = ares_dns_record_create(&dnsrec, 0, (unsigned short) qflags,
+                                              ARES_OPCODE_QUERY, ARES_RCODE_NOERROR);
+    if (st == ARES_SUCCESS) {
+      st = ares_dns_record_query_add(dnsrec, name,
+                                     (ares_dns_rec_type_t)type, (ares_dns_class_t)dnsclass);
+    }
+    if (st != ARES_SUCCESS) {
+      ares_dns_record_destroy(dnsrec);
+      mrb_cares_args_unregister(mrb, args);
+      mrb_cares_usage_error(mrb, "ares_search_dnsrec", st);
+    }
+    st = ares_search_dnsrec(ctx->channel, dnsrec, mrb_ares_query_dnsrec_cb, args);
+    ares_dns_record_destroy(dnsrec);
+    if (st == ARES_EFORMERR) {
+      /* the one failure ares_search_dnsrec does NOT report via the callback */
+      mrb_cares_args_unregister(mrb, args);
+      mrb_cares_usage_error(mrb, "ares_search_dnsrec", st);
+    }
+  } else {
+    /* ares_query_dnsrec reports every enqueue failure through the callback
+     * (which unregisters the holder), so nothing to raise here. */
+    ares_query_dnsrec(
+      ctx->channel,
+      name,
+      (ares_dns_class_t)dnsclass,
+      (ares_dns_rec_type_t)type,
+      mrb_ares_query_dnsrec_cb,
+      args,
+      &qid
+    );
   }
 
-  mrb_iv_set(mrb, self, args->obj_id, holder);
-  return mrb_convert_number(mrb, tmout);
+  return mrb_convert_number(mrb, qid);
+}
+
+static mrb_value
+mrb_ares_query(mrb_state *mrb, mrb_value self)
+{
+  return mrb_ares_query_common(mrb, self, FALSE);
+}
+
+static mrb_value
+mrb_ares_search(mrb_state *mrb, mrb_value self)
+{
+  return mrb_ares_query_common(mrb, self, TRUE);
 }
 
 
@@ -899,18 +951,32 @@ mrb_ares_timeout(mrb_state *mrb, mrb_value self)
   mrb_float tmt = 0.0;
   int argc = mrb_get_args(mrb, "|f", &tmt);
   struct timeval tv = {0};
+  struct timeval *rtv;
   if (argc == 1) {
-    tmt += 0.5e-7; // we are adding this so maxtv can't become negative.
-    struct timeval maxtv = {
-      .tv_sec = (__time_t) tmt,
-      .tv_usec = (long) ((tmt - (mrb_int)(tmt)) * USEC_PER_SEC)
-    };
-    ares_timeout(mrb_cares_ctx->channel, &maxtv, &tv);
-  } else {
-    ares_timeout(mrb_cares_ctx->channel, NULL, &tv);
+    if (tmt < 0.0)
+      tmt = 0.0;
+    struct timeval maxtv;
+    maxtv.tv_sec = (decltype(maxtv.tv_sec)) tmt;
+    maxtv.tv_usec = (decltype(maxtv.tv_usec)) ((tmt - (mrb_float) maxtv.tv_sec) * USEC_PER_SEC);
+    rtv = ares_timeout(mrb_cares_ctx->channel, &maxtv, &tv);
+    /* rtv points at whichever of maxtv/tv is smaller; maxtv is dead after
+     * this frame, so the value must be read out before returning. */
+    if (rtv == NULL)
+      rtv = &tv;
+    return mrb_float_value(mrb, (mrb_float) rtv->tv_sec + ((mrb_float) rtv->tv_usec / (mrb_float) USEC_PER_SEC));
   }
 
-  return mrb_float_value(mrb, (mrb_float) tv.tv_sec + ((mrb_float) tv.tv_usec / (mrb_float) USEC_PER_SEC));
+  rtv = ares_timeout(mrb_cares_ctx->channel, NULL, &tv);
+  if (rtv == NULL) /* no queries pending */
+    return mrb_float_value(mrb, 0.0);
+  return mrb_float_value(mrb, (mrb_float) rtv->tv_sec + ((mrb_float) rtv->tv_usec / (mrb_float) USEC_PER_SEC));
+}
+
+static mrb_value
+mrb_ares_active_queries(mrb_state *mrb, mrb_value self)
+{
+  struct mrb_cares_ctx *mrb_cares_ctx = (struct mrb_cares_ctx *) mrb_data_get_ptr(mrb, self, &mrb_cares_ctx_type);
+  return mrb_convert_number(mrb, ares_queue_active_queries(mrb_cares_ctx->channel));
 }
 
 static mrb_value
@@ -1018,8 +1084,9 @@ mrb_ares_set_local_ip4(mrb_state *mrb, mrb_value self)
   const char *local_ip4;
   mrb_get_args(mrb, "z", &local_ip4);
   struct in_addr addr;
-  if (ares_inet_pton(AF_INET, local_ip4, &(addr.s_addr)) != 0) {
-    mrb_sys_fail(mrb, "ares_inet_pton");
+  /* ares_inet_pton returns 1 on success, 0 on malformed input, -1 on error */
+  if (ares_inet_pton(AF_INET, local_ip4, &addr) != 1) {
+    mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid IPv4 address: %s", local_ip4);
   }
 
   ares_set_local_ip4(mrb_cares_ctx->channel, addr.s_addr);
@@ -1035,8 +1102,8 @@ mrb_ares_set_local_ip6(mrb_state *mrb, mrb_value self)
   mrb_get_args(mrb, "z", &local_ip6);
 
   unsigned char buf[sizeof(struct in6_addr)];
-  if (ares_inet_pton(AF_INET6, local_ip6, buf) != 0) {
-    mrb_sys_fail(mrb, "ares_inet_pton");
+  if (ares_inet_pton(AF_INET6, local_ip6, buf) != 1) {
+    mrb_raisef(mrb, E_ARGUMENT_ERROR, "invalid IPv6 address: %s", local_ip6);
   }
 
   ares_set_local_ip6(mrb_cares_ctx->channel, buf);
@@ -1155,23 +1222,31 @@ mrb_ares_options_domains_set(mrb_state *mrb, mrb_value self)
   mrb_value *argv;
   mrb_int argc;
   mrb_get_args(mrb, "*", &argv, &argc);
-  mrb_cares_options->options.domains = (char **) mrb_realloc(mrb, mrb_cares_options->options.domains, argc * sizeof(char *));
-  mrb_cares_options->options.ndomains = (int) argc;
-  mrb_value domains = mrb_ary_new_capa(mrb, argc);
-  mrb_gc_protect(mrb, domains);
   if (argc) {
-    for (int i = 0; i < argc; i++) {
-      mrb_value dupped = mrb_str_dup(mrb, argv[i]);
-      mrb_cares_options->options.domains[i] = (char *) mrb_string_value_cstr(mrb, &dupped);
+    /* Validate and copy every domain BEFORE touching the options struct, so
+     * a raise (non-String argument, embedded NUL, OOM) can't leave
+     * options.domains/ndomains pointing at uninitialized memory. */
+    mrb_value domains = mrb_ary_new_capa(mrb, argc);
+    mrb_gc_protect(mrb, domains);
+    for (mrb_int i = 0; i < argc; i++) {
+      mrb_value dupped = mrb_str_dup(mrb, mrb_ensure_string_type(mrb, argv[i]));
+      mrb_string_value_cstr(mrb, &dupped);
       mrb_obj_freeze(mrb, dupped);
       mrb_ary_push(mrb, domains, dupped);
     }
+    char **cdomains = (char **) mrb_realloc(mrb, mrb_cares_options->options.domains, argc * sizeof(char *));
+    for (mrb_int i = 0; i < argc; i++) {
+      cdomains[i] = RSTRING_PTR(mrb_ary_ref(mrb, domains, i));
+    }
+    mrb_cares_options->options.domains = cdomains;
+    mrb_cares_options->options.ndomains = (int) argc;
     mrb_iv_set(mrb, self, MRB_IVSYM(domains), domains);
     mrb_obj_freeze(mrb, domains);
     mrb_cares_options->optmask |= ARES_OPT_DOMAINS;
   } else {
     mrb_free(mrb, mrb_cares_options->options.domains);
     mrb_cares_options->options.domains = NULL;
+    mrb_cares_options->options.ndomains = 0;
     mrb_iv_remove(mrb, self, MRB_IVSYM(domains));
     mrb_cares_options->optmask &= ~ARES_OPT_DOMAINS;
   }
@@ -1425,10 +1500,11 @@ mrb_cares_register_ruby(mrb_state *mrb)
   mrb_ares_class = mrb_class_get_id(mrb, MRB_SYM(Ares));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(initialize),        mrb_ares_init_options,          MRB_ARGS_REQ(1)|MRB_ARGS_BLOCK());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getaddrinfo),       mrb_ares_getaddrinfo,           MRB_ARGS_ARG(2, 4)|MRB_ARGS_BLOCK());
-  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getnameinfo),       mrb_ares_getnameinfo,           MRB_ARGS_ARG(1, 1)|MRB_ARGS_BLOCK());
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(getnameinfo),       mrb_ares_getnameinfo,           MRB_ARGS_ARG(1, 3)|MRB_ARGS_BLOCK());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(query),            mrb_ares_query,                MRB_ARGS_ARG(2, 1)|MRB_ARGS_BLOCK());
-  mrb_define_alias_id (mrb, mrb_ares_class, MRB_SYM(search), MRB_SYM(query));
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(search),           mrb_ares_search,               MRB_ARGS_ARG(2, 1)|MRB_ARGS_BLOCK());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(timeout),           mrb_ares_timeout,               MRB_ARGS_OPT(1));
+  mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(active_queries),    mrb_ares_active_queries,        MRB_ARGS_NONE());
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(process_fd),        mrb_ares_process_fd,            MRB_ARGS_REQ(2));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(process),           mrb_ares_process,               MRB_ARGS_REQ(2));
   mrb_define_method_id(mrb, mrb_ares_class, MRB_SYM(servers_ports_csv),mrb_ares_set_servers_ports_csv, MRB_ARGS_REQ(1));

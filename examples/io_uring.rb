@@ -39,8 +39,8 @@ ares.search("heise.de", :AAAA) do |timeouts, hostent, error|
   puts hostent.inspect
 end
 
-while ((timeout = ares.timeout) > 0.0)
-  uring.wait(timeout) do |operation|
+while ares.active_queries > 0
+  uring.wait(ares.timeout) do |operation|
     raise operation.errno if operation.errno
     if operation.type != :cancel
       ares.process_fd((operation.readable?) ? operation.sock : -1, (operation.writable?) ? operation.sock : -1)
