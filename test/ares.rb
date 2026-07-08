@@ -57,6 +57,18 @@ assert('Ares::Options#domains_set and #domains') do
   end
 end
 
+assert('Ares::Options#domains_set rejects non-String domains') do
+  opts = Ares::Options.new
+  if Ares::Options::AVAILABLE_OPTIONS.include?(:domains)
+    assert_raise(TypeError) { opts.domains_set(123) }
+    assert_raise(TypeError) { opts.domains_set('example.com', :sym) }
+    # a failed call must not clobber previously set domains
+    opts.domains_set('example.com')
+    assert_raise(TypeError) { opts.domains_set(nil) }
+    assert_equal(['example.com'], opts.domains)
+  end
+end
+
 assert('Ares::Options#resolvconf_path= and #hosts_path=') do
   opts = Ares::Options.new
   if Ares::Options::AVAILABLE_OPTIONS.include?(:resolvconf_path)
@@ -102,6 +114,33 @@ assert('Ares#timeout returns a Float and is 0.0 when idle') do
   assert_equal(0.0, ares.timeout)
 end
 
+assert('Ares#timeout(max) returns max when idle') do
+  ares = Ares.new { |_socket, _readable, _writable| }
+  assert_float(2.5, ares.timeout(2.5))
+  assert_float(0.0, ares.timeout(-1.0))
+end
+
+assert('Ares#active_queries is 0 when idle') do
+  ares = Ares.new { |_socket, _readable, _writable| }
+  assert_equal(0, ares.active_queries)
+end
+
+assert('Ares#local_ip4= and #local_ip6= accept valid addresses and reject garbage') do
+  ares = Ares.new { |_socket, _readable, _writable| }
+  ares.local_ip4 = '127.0.0.1'
+  ares.local_ip4('0.0.0.0')
+  ares.local_ip6 = '::1'
+  ares.local_ip6('::')
+  assert_raise(ArgumentError) { ares.local_ip4('not-an-ip') }
+  assert_raise(ArgumentError) { ares.local_ip4('::1') }
+  assert_raise(ArgumentError) { ares.local_ip6('999.1.2.3') }
+end
+
+assert('Ares#process accepts empty arrays (select timeout path)') do
+  ares = Ares.new { |_socket, _readable, _writable| }
+  assert_equal(ares, ares.process([], []))
+end
+
 assert('Ares#getaddrinfo requires a block') do
   ares = Ares.new { |_socket, _readable, _writable| }
   assert_raise(ArgumentError) { ares.getaddrinfo('example.com', 443) }
@@ -110,6 +149,12 @@ end
 assert('Ares#getnameinfo rejects an invalid address family') do
   ares = Ares.new { |_socket, _readable, _writable| }
   assert_raise(ArgumentError) { ares.getnameinfo(-1) { |*_args| } }
+end
+
+assert('Ares#getnameinfo rejects an invalid IP address string') do
+  ares = Ares.new { |_socket, _readable, _writable| }
+  assert_raise(ArgumentError) { ares.getnameinfo(Socket::AF_INET, 'bogus') { |*_args| } }
+  assert_raise(ArgumentError) { ares.getnameinfo(Socket::AF_INET6, '1.2.3.4') { |*_args| } }
 end
 
 assert('Ares#query requires a block') do
@@ -122,7 +167,7 @@ assert('Ares#query rejects an unknown record type') do
   assert_raise(ArgumentError) { ares.query('example.com', :NOT_A_REAL_TYPE) { |*_args| } }
 end
 
-assert('Ares#search is an alias for Ares#query') do
+assert('Ares#search validates its arguments like Ares#query') do
   ares = Ares.new { |_socket, _readable, _writable| }
   assert_true(ares.respond_to?(:search))
   assert_raise(ArgumentError) { ares.search('example.com', :A) }
@@ -221,12 +266,20 @@ def with_fixture_dns_server(response_ip)
   write_pollers = {}
   ares = Ares.new do |socket, readable, writable|
     if readable
-      read_pollers[socket] ||= IO.for_fd(socket, 'r')
+      unless read_pollers[socket]
+        io = IO.for_fd(socket, 'r')
+        io.autoclose = false
+        read_pollers[socket] = io
+      end
     else
       read_pollers.delete(socket)
     end
     if writable
-      write_pollers[socket] ||= IO.for_fd(socket, 'w')
+      unless write_pollers[socket]
+        io = IO.for_fd(socket, 'w')
+        io.autoclose = false
+        write_pollers[socket] = io
+      end
     else
       write_pollers.delete(socket)
     end
@@ -235,12 +288,10 @@ def with_fixture_dns_server(response_ip)
 
   yield ares
 
-  loop do
-    timeout = ares.timeout
-    break if timeout <= 0.0
-
-    readables, writables = IO.select(read_pollers.values + [server], write_pollers.values, nil, timeout)
+  while ares.active_queries > 0
+    readables, writables = IO.select(read_pollers.values + [server], write_pollers.values, nil, ares.timeout)
     readables ||= []
+    writables ||= []
     fixture_ready = readables.include?(server)
     readables = readables - [server]
 
@@ -264,6 +315,8 @@ assert('Ares#query resolves an A record via a local fixture DNS server') do
       answers = ans
       extra = extra_or_error
     end
+    assert_equal(1, ares.active_queries)
+    assert_true(ares.timeout(0.001) <= 0.001)
   end
 
   assert_kind_of(Array, answers)
@@ -286,6 +339,42 @@ assert('Ares#query reports ENOTFOUND via a local fixture DNS server') do
 
   assert_nil(answers)
   assert_kind_of(Ares::ENOTFOUND, error)
+end
+
+assert('Ares#search resolves via a local fixture DNS server') do
+  answers = nil
+  with_fixture_dns_server('203.0.113.42') do |ares|
+    # the name contains enough dots to be tried as-is first, so the fixture
+    # server sees exactly this query regardless of local search domains
+    ares.search('fixture.mruby-c-ares.test', :A) do |_timeouts, ans, _extra_or_error|
+      answers = ans
+    end
+  end
+
+  assert_kind_of(Array, answers)
+  assert_equal('203.0.113.42', answers.first[:a_addr])
+end
+
+assert('Ares.run survives select timeouts and reports an error for an unresponsive server') do
+  server = UDPSocket.new
+  begin
+    server.bind('127.0.0.1', 0)
+    port = server.addr[1]
+
+    error = :unset
+    # timeout path: the fixture server never answers, so IO.select returns nil
+    # (previously a TypeError in Ares.run) and c-ares must retry, then fail.
+    Ares.run(timeout: 50, tries: 2) do |dns|
+      dns.servers_ports_csv = "127.0.0.1:#{port}"
+      dns.query('unresponsive.mruby-c-ares.test', :A) do |_timeouts, _answers, extra_or_error|
+        error = extra_or_error
+      end
+    end
+
+    assert_kind_of(Ares::Error, error)
+  ensure
+    server.close
+  end
 end
 
 assert('Ares#getaddrinfo resolves via a local fixture DNS server') do

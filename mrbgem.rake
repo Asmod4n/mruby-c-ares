@@ -7,12 +7,10 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
 
   FileUtils.mkdir_p(build_root)
 
-  unless File.exist?(install_lib) || File.exist?(install_hdr)
-    # Detect compiler from environment or fallback to platform
-    compiler = spec.cc.command
-    use_pie = compiler.include?("clang") || compiler.include?("gcc")
-
-    c_flags = use_pie ? "-fPIE" : ""
+  # A partial previous build (header installed but the lib build failed, or
+  # vice versa) must be retried, so only skip when both artifacts exist.
+  unless File.exist?(install_lib) && File.exist?(install_hdr)
+    c_flags = spec.for_windows? ? "" : "-fPIE"
     build_type = spec.cc.defines.include?('MRB_DEBUG') ? "Debug" : "Release"
 
     build_cmd = [
@@ -28,11 +26,7 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
 
     Dir.chdir(build_root) do
       sh build_cmd
-      if spec.for_windows?
-        sh "cmake --build . --config #{build_type} --target install"
-      else
-        sh "make -j16 && make install"
-      end
+      sh "cmake --build . --config #{build_type} --target install --parallel"
     end
   end
 
@@ -48,7 +42,6 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.cxx.defines << "CARES_STATICLIB"
   spec.add_dependency 'mruby-socket'
   spec.add_dependency 'mruby-c-ext-helpers'
-  spec.add_dependency 'mruby-uri-parser'
   spec.add_test_dependency 'mruby-io-uring'
   spec.add_test_dependency 'mruby-pack'
 

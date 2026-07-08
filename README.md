@@ -6,7 +6,7 @@ Supports `getaddrinfo`, `getnameinfo`, and arbitrary DNS record queries (A, AAAA
 
 ## Requirements
 
-c-ares >= 1.16.0 is built from source automatically (via the `deps/c-ares` git submodule and CMake). You need:
+c-ares >= 1.28.0 (for the `ares_dns_record`/`ares_query_dnsrec` APIs) is built from source automatically (via the `deps/c-ares` git submodule and CMake). You need:
 
 - **CMake** (for building c-ares)
 - A C/C++ compiler (gcc or clang)
@@ -29,7 +29,6 @@ end
 
 - `mruby-socket` (for `Addrinfo` and `Socket::AF_*` constants)
 - `mruby-c-ext-helpers`
-- `mruby-uri-parser`
 
 ## Usage
 
@@ -80,8 +79,8 @@ ares.getaddrinfo("example.com", "https") do |timeouts, cnames, addrinfos, error|
   puts addrinfos.inspect
 end
 
-while (timeout = ares.timeout) > 0.0
-  my_poller.wait(timeout) do |fd, r, w|
+while ares.active_queries > 0
+  my_poller.wait(ares.timeout) do |fd, r, w|
     ares.process_fd(r ? fd : -1, w ? fd : -1)
   end
 end
@@ -117,9 +116,9 @@ Available options depend on your c-ares version. Call `Ares::Options::AVAILABLE_
 
 For details on what each option does: https://c-ares.org/docs/ares_init_options.html
 
-### `Ares.run { |dns| ... } → Ares`
+### `Ares.run(options = Ares::Options.new) { |dns| ... } → Ares`
 
-Convenience method that creates a resolver with `IO.select`-based polling, yields it to the block, then runs the event loop until all queries complete. No external poller required.
+Convenience method that creates a fresh resolver with `IO.select`-based polling, yields it to the block, then runs the event loop until all queries complete (including retries and timeouts). No external poller required. **options** accepts the same values as `Ares.new`.
 
 ### `ares.query(name, type, class = :IN) { |timeouts, answers, extra_or_error| ... }`
 
@@ -135,7 +134,11 @@ Performs a DNS query using the c-ares dnsrec API.
 - `answers` — Array of Hashes on success, `nil` on error. Each hash contains `:name`, `:type` (Symbol), `:class` (Symbol), `:ttl`, plus type-specific fields (e.g. `:a_addr`, `:aaaa_addr`, `:mx_preference`, `:mx_exchange`, `:txt_data`, `:srv_target`, etc.). Field names come from `Ares::RRFieldMap`.
 - `extra_or_error` — on success, a Hash with `:authority` and `:additional` arrays (same format as answers). On error, an `Ares::Error` exception (not raised, just passed).
 
-`search` is an alias for `query`.
+Returns the query id (Integer). If the query cannot even be enqueued, the error is delivered through the callback like any other DNS error.
+
+### `ares.search(name, type, class = :IN) { |timeouts, answers, extra_or_error| ... }`
+
+Like `query`, but applies the configured search domains and `ndots` rules (see `ares_search`), trying each candidate name in order until one yields a result.
 
 ### `ares.getaddrinfo(name, service, flags = 0, family = AF_UNSPEC, socktype = 0, protocol = 0) { |timeouts, cnames, addrinfos, error| ... }`
 
@@ -170,7 +173,11 @@ Reverse DNS lookup.
 
 ### `ares.timeout(max = nil) → Float`
 
-Returns the number of seconds until the next timeout fires. Returns `0.0` when no queries are pending. Pass `max` to clamp the returned value.
+Returns the number of seconds until the next timeout fires. Without `max`, returns `0.0` when no queries are pending. With `max`, the result is clamped to at most `max` (and is exactly `max` when idle) — suitable for passing straight to a poller.
+
+### `ares.active_queries → Integer`
+
+Number of in-flight queries. Use `active_queries > 0` as the loop condition of a custom event loop.
 
 ### `ares.process_fd(read_fd, write_fd)`
 
