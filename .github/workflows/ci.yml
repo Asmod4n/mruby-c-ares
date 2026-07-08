@@ -150,13 +150,11 @@ jobs:
   windows:
     # Runs the full mrbtest suite with MSVC, network fixtures included:
     # mruby-io's fd convention on Windows is the raw winsock SOCKET
-    # (IO.for_fd validates via getsockopt, IO.select is winsock select),
-    # which is exactly what c-ares hands out. Non-blocking until the suite
-    # proves stable on MSVC.
+    # (Socket.for_fd validates via getsockopt, IO.select is winsock select),
+    # which is exactly what c-ares hands out.
     name: Windows x64 (MSVC)
     if: github.event_name != 'push' || !startsWith(github.event.head_commit.message, 'Merge pull request')
     runs-on: windows-latest
-    continue-on-error: true
     timeout-minutes: 60
     concurrency:
       group: ${{ github.workflow }}-${{ github.ref }}-windows
