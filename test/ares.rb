@@ -266,25 +266,21 @@ def with_fixture_dns_server(response_ip)
   server.bind('127.0.0.1', 0)
   port = server.addr[1]
 
+  pollers = {}
   read_pollers = {}
   write_pollers = {}
   ares = Ares.new do |socket, readable, writable|
-    if readable
-      unless read_pollers[socket]
-        io = IO.for_fd(socket, 'r')
-        io.autoclose = false
-        read_pollers[socket] = io
+    if readable || writable
+      sock = pollers[socket] ||= begin
+        s = Socket.for_fd(socket)
+        s.autoclose = false # c-ares owns the socket
+        s
       end
+      readable ? read_pollers[socket] = sock : read_pollers.delete(socket)
+      writable ? write_pollers[socket] = sock : write_pollers.delete(socket)
     else
+      pollers.delete(socket)
       read_pollers.delete(socket)
-    end
-    if writable
-      unless write_pollers[socket]
-        io = IO.for_fd(socket, 'w')
-        io.autoclose = false
-        write_pollers[socket] = io
-      end
-    else
       write_pollers.delete(socket)
     end
   end

@@ -47,30 +47,25 @@ class Ares
   def self.run(options = Ares::Options.new, &block)
     raise ArgumentError, "no block given" unless block
 
-    read_pollers  = {}   # fd => IO
-    write_pollers = {}   # fd => IO
+    pollers       = {}   # fd => Socket (one wrapper per c-ares socket)
+    read_pollers  = {}
+    write_pollers = {}
 
-    # The wrapper IOs must never close the fds on GC (autoclose = false):
-    # c-ares owns its sockets and closes them itself, and by then the OS may
+    # c-ares owns its sockets and closes them itself, so the wrappers must
+    # never close the fds on GC (autoclose = false) — by then the OS may
     # have handed the same fd number to someone else.
     ares = Ares.new(options) do |socket, readable, writable|
-      if readable
-        unless read_pollers[socket]
-          io = IO.for_fd(socket, "r")
-          io.autoclose = false
-          read_pollers[socket] = io
+      if readable || writable
+        sock = pollers[socket] ||= begin
+          s = Socket.for_fd(socket)
+          s.autoclose = false
+          s
         end
+        readable ? read_pollers[socket] = sock : read_pollers.delete(socket)
+        writable ? write_pollers[socket] = sock : write_pollers.delete(socket)
       else
+        pollers.delete(socket)
         read_pollers.delete(socket)
-      end
-
-      if writable
-        unless write_pollers[socket]
-          io = IO.for_fd(socket, "w")
-          io.autoclose = false
-          write_pollers[socket] = io
-        end
-      else
         write_pollers.delete(socket)
       end
     end
