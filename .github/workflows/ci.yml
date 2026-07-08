@@ -153,6 +153,17 @@ jobs:
       - name: Set up MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      # ruby/setup-ruby's msys2 (and Git for Windows) ship GNU coreutils'
+      # `link`, which shadows MSVC's link.exe on PATH and breaks the mruby
+      # linker invocation with `link: extra operand '/INCREMENTAL:NO'`.
+      - name: Remove GNU coreutils link.exe shadowing MSVC's linker
+        shell: pwsh
+        run: |
+          foreach ($p in @('C:\msys64\usr\bin\link.exe', 'C:\Program Files\Git\usr\bin\link.exe')) {
+            if (Test-Path $p) { Remove-Item -Force $p; Write-Host "removed $p" }
+          }
+          Get-Command link.exe | Format-List Source
+
       - name: Build
         run: rake build
         env:
