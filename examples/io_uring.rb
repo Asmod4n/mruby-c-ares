@@ -40,10 +40,30 @@ ares.search("heise.de", :AAAA) do |timeouts, hostent, error|
 end
 
 while ares.active_queries > 0
-  uring.wait(ares.timeout) do |operation|
+  # wait(wait_nr, timeout): the count comes FIRST and the seconds second.
+  # ares.timeout is a Float of seconds, so it belongs in the second slot -
+  # passed as the first it becomes a completion count, and the ring then
+  # either returns EAGAIN (count 0, under a second) or waits forever
+  # (count > 0, no timeout).
+  ready = uring.wait(1, ares.timeout) do |operation|
     raise operation.errno if operation.errno
     if operation.type != :cancel
       ares.process_fd((operation.readable?) ? operation.sock : -1, (operation.writable?) ? operation.sock : -1)
+      # io_uring_prep_poll_multishot(3): a CQE without IORING_CQE_F_MORE is
+      # the end of that registration, and "the application should not expect
+      # further CQEs from the original request and must reissue a new one if
+      # it still wishes to get notifications on this file descriptor".
+      # process_fd ran first, so a socket c-ares has dropped is already out
+      # of pollers, and one whose interest moved holds a different operation.
+      unless operation.more?
+        if pollers[operation.sock] == operation
+          pollers[operation.sock] = uring.prep_poll_multishot(operation.sock, operation.poll_mask)
+        end
+      end
     end
   end
+  # ETIME, no socket was ready. c-ares still has to hear that the time
+  # passed, or its retries and query timeouts never run - the same reason
+  # io_select.rb processes empty fd sets when IO.select returns nil.
+  ares.process_fd(-1, -1) unless ready
 end
