@@ -1,0 +1,24 @@
+# Opens an issue when deps/c-ares has a newer upstream tag. It never
+# moves the pin - the pin is what keeps the constants in src/*.inc and
+# the library they compile against in step, so it moves when somebody
+# decides it does.
+name: deps upstream
+
+on:
+  schedule:
+    # Mondays, 06:17 UTC. The schedule has to live here: a reusable
+    # workflow cannot bring its own trigger.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    # A SHA and not @main: this runs with issues: write in this
+    # repository.
+    uses: Asmod4n/git-submodule-notifier/.github/workflows/deps-upstream.yml@a528af65c1b33828e7779a3d6f1c80e820cebcd5
+    with:
+      notify: '@Asmod4n'
