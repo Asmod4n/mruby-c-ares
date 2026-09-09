@@ -1,4 +1,3 @@
-require_relative 'src/const_gen.rb'
 MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
 
   build_root   = "#{spec.build_dir}/build"
@@ -38,7 +37,6 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   end
 
   spec.cxx.include_paths << "#{build_root}/include"
-  spec.cxx.include_paths << "#{spec.build_dir}/src"
   spec.cxx.defines << "CARES_STATICLIB"
   spec.add_dependency 'mruby-socket'
   spec.add_dependency 'mruby-c-ext-helpers'
@@ -48,5 +46,4 @@ MRuby::Gem::Specification.new('mruby-c-ares') do |spec|
   spec.license = 'MIT'
   spec.author  = 'Hendrik Beskow'
   spec.summary = 'Async DNS for mruby'
-  const_gen(spec)
 end

@@ -1436,7 +1436,7 @@ mrb_cares_bootstrap(mrb_state *mrb)
   do { \
     mrb_define_const_id(mrb, mrb_ares_class, ARES_CONST_NAME, mrb_convert_number(mrb, ARES_CONST)); \
   } while(0)
-#include "cares_const.cstub"
+#include "cares_const.inc"
 
   mrb_value errno_to_class = mrb_hash_new(mrb);
   mrb_define_const_id(mrb, mrb_ares_class, MRB_SYM(_Errno2Class), errno_to_class);
@@ -1461,13 +1461,13 @@ mrb_cares_bootstrap(mrb_state *mrb)
     mrb_hash_set(mrb, ares_dns_class, mrb_symbol_value(ARES_ENUM_NAME), mrb_convert_number(mrb, ARES_ENUM)); \
   } while(0)
 
-#include "cares_enums.cstub"
+#include "cares_enums.inc"
 
   /* RRFieldMap */
   mrb_value rr_field_map = mrb_hash_new(mrb);
   mrb_define_const_id(mrb, mrb_ares_class, MRB_SYM(RRFieldMap), rr_field_map);
 
-#include "cares_rr_fields.cstub"
+#include "cares_rr_fields.inc"
 
   mrb_obj_freeze(mrb, rr_field_map);
 
@@ -1475,7 +1475,7 @@ mrb_cares_bootstrap(mrb_state *mrb)
   mrb_value rr_opt_param_map = mrb_hash_new(mrb);
   mrb_define_const_id(mrb, mrb_ares_class, MRB_SYM(RROptParamMap), rr_opt_param_map);
 
-#include "cares_rr_opt_params.cstub"
+#include "cares_rr_opt_params.inc"
 
   mrb_obj_freeze(mrb, rr_opt_param_map);
 
